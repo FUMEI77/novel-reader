@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 
-const VERSION = "v1.5.0";
+const VERSION = "v1.5.1";
 const CHANGELOG = [
+  { version: "v1.5.1", date: "2026-05", notes: ["修正底部頁碼被 Home Bar 遮住", "改良簡體中文（GBK）自動偵測與轉換"] },
   { version: "v1.5.0", date: "2026-05", notes: ["改良 Big5/GBK 自動辨識（字頻分析）", "修正底部被 Home Bar 遮住", "修正左右留白不對稱", "閱讀背景改為白色", "設定移至書庫頁面"] },
   { version: "v1.4.0", date: "2026-05", notes: ["修正繁體中文（Big5）亂碼", "長按書籍可重新命名或刪除", "底部進度條避開 Home Bar"] },
   { version: "v1.3.0", date: "2026-05", notes: ["自動偵測簡體並轉換繁體", "底部改為閱讀進度顯示", "書庫版本紀錄"] },
@@ -21,35 +22,27 @@ const noZoomStyle = `
 const S2T_MAP = {"爱":"愛","罢":"罷","备":"備","贝":"貝","笔":"筆","毕":"畢","边":"邊","变":"變","标":"標","别":"別","补":"補","参":"參","产":"產","长":"長","场":"場","车":"車","称":"稱","齿":"齒","冲":"衝","虫":"蟲","处":"處","传":"傳","从":"從","错":"錯","达":"達","带":"帶","单":"單","导":"導","灯":"燈","点":"點","电":"電","东":"東","动":"動","断":"斷","队":"隊","对":"對","发":"發","飞":"飛","费":"費","风":"風","复":"復","盖":"蓋","干":"乾","刚":"剛","个":"個","给":"給","够":"夠","关":"關","观":"觀","广":"廣","过":"過","还":"還","汉":"漢","号":"號","后":"後","护":"護","话":"話","画":"畫","怀":"懷","换":"換","黄":"黃","会":"會","机":"機","极":"極","几":"幾","际":"際","继":"繼","价":"價","见":"見","将":"將","奖":"獎","节":"節","尽":"盡","经":"經","举":"舉","开":"開","块":"塊","来":"來","劳":"勞","乐":"樂","类":"類","离":"離","历":"歷","联":"聯","两":"兩","临":"臨","灵":"靈","龙":"龍","楼":"樓","乱":"亂","妈":"媽","买":"買","满":"滿","门":"門","灭":"滅","难":"難","内":"內","脑":"腦","鸟":"鳥","农":"農","强":"強","亲":"親","区":"區","热":"熱","认":"認","时":"時","实":"實","书":"書","树":"樹","说":"說","岁":"歲","台":"臺","态":"態","体":"體","听":"聽","头":"頭","团":"團","万":"萬","为":"為","问":"問","无":"無","务":"務","习":"習","现":"現","线":"線","乡":"鄉","响":"響","协":"協","写":"寫","寻":"尋","学":"學","选":"選","压":"壓","严":"嚴","样":"樣","业":"業","义":"義","应":"應","营":"營","拥":"擁","优":"優","鱼":"魚","语":"語","园":"園","远":"遠","运":"運","战":"戰","这":"這","证":"證","种":"種","众":"眾","转":"轉","装":"裝","状":"狀","资":"資","总":"總","组":"組"};
 function s2t(text) { return text.split("").map(c => S2T_MAP[c] || c).join(""); }
 
-// ── Big5 常用繁體字（用於辨識）────────────────────────────────
-const BIG5_CHARS = new Set("的一是了我不人在他有這個上們來到說國和地也子時道出而要於就下得可你年生自會那後能對著事其里所去行過家十用發天如然作方成者多日都三小軍二無同麼經法當起與好看學進種將還分此心前面又定見只主沒公從".split(""));
-const GBK_CHARS = new Set("的一是了我不人在他有这个上们来到说国和地也子时道出而要于就下得可你年生自会那后能对着事其里所去行过家十用发天如然作方成者多日都三小军二无同么经法当起与好看学进种将还分此心前面又定见只主没公从".split(""));
+// ── 編碼辨識 ──────────────────────────────────────────────────
+// 簡體專有字（這些字形只在簡體GBK出現，繁體Big5不用這些字形）
+const SIMP_ONLY = new Set("这们说时对没发还应该过现让则两样请进东书门问给变边带单导电断队飞风复关广汉后护画怀换会机极继见将节经举来劳乐类离联临灵龙楼乱妈买满灭难脑鸟农强认实树岁态听头团为问务习线响写寻学选严样义应营优鱼语园远运战证种众转装资总组".split(""));
 
 function detectEncoding(ab) {
   // 先試 UTF-8
   try {
     const t = new TextDecoder("utf-8", { fatal: true }).decode(ab);
-    if (!t.includes("�") && !t.includes("\uFFFD")) return { text: t, enc: "utf8" };
+    if (!t.includes("�")) return { text: t, enc: "utf8" };
   } catch {}
-
-  // 同時解碼 Big5 和 GBK，用字頻判斷
+  // 同時解碼 Big5 和 GBK
   let big5Text = "", gbkText = "";
   try { big5Text = new TextDecoder("big5").decode(ab); } catch {}
   try { gbkText = new TextDecoder("gbk").decode(ab); } catch {}
-
-  const sample = 3000;
-  let big5Score = 0, gbkScore = 0;
-
-  for (const c of big5Text.slice(0, sample)) {
-    if (BIG5_CHARS.has(c)) big5Score++;
-  }
-  for (const c of gbkText.slice(0, sample)) {
-    if (GBK_CHARS.has(c)) gbkScore++;
-  }
-
-  // Big5 繁體字得分高 → 繁體
-  if (big5Score >= gbkScore) return { text: big5Text, enc: "big5" };
-  return { text: gbkText, enc: "gbk" };
+  // 計算GBK解碼後的簡體專有字出現率
+  const sample = gbkText.slice(0, 5000);
+  let simpCount = 0;
+  for (const c of sample) { if (SIMP_ONLY.has(c)) simpCount++; }
+  // 超過1.5% → GBK簡體
+  if (sample.length > 0 && simpCount / sample.length > 0.015) return { text: gbkText, enc: "gbk" };
+  return { text: big5Text || gbkText, enc: "big5" };
 }
 
 function parseFile(ab, name) {
@@ -433,8 +426,8 @@ export default function App() {
       {/* Header */}
       <div style={{ padding:"20px 16px 12px", borderBottom:`1px solid ${lbd}`, display:"flex", alignItems:"center", justifyContent:"space-between", background:lhd }}>
         <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-          <div style={{ fontSize:22, fontWeight:"bold", color:ltc }}>我的書庫</div>
-          <button style={{ ...ib(ltc), padding:"4px 6px", fontSize:16, opacity:0.6 }} onClick={() => setView("settings")}>⚙️</button>
+          <div style={{ fontSize:22, fontWeight:"bold", color:ltc }}>書庫</div>
+          <button style={{ ...ib(ltc), padding:"4px 6px", fontSize:16, opacity:0.6 }} onClick={() => setShowInfo(true)}>ℹ️</button><button style={{ ...ib(ltc), padding:"4px 6px", fontSize:16, opacity:0.6 }} onClick={() => setView("settings")}>⚙️</button>
         </div>
         <div style={{ display:"flex", gap:4, alignItems:"center" }}>
           <button style={{ ...ib(ltc), fontSize:17, opacity:libMode==="large"?1:0.4 }} onClick={() => setLibMode("large")}>⊞</button>
@@ -508,7 +501,7 @@ export default function App() {
           <button style={{ ...ib(rtc), color:tts?rac:rtc }} onClick={toggleTTS}>🔊</button>
           <button style={ib(rtc)} onClick={() => { setChaps(s=>!s); setBms(false); setGestureSets(false); }}>📋</button>
           <button style={ib(rtc)} onClick={() => { setBms(s=>!s); setChaps(false); setGestureSets(false); }}>📑</button>
-          <button style={ib(rtc)} onClick={() => setView("settings")}>⚙️</button>
+
         </div>
       </div>
 
@@ -528,7 +521,7 @@ export default function App() {
       </div>
 
       {/* 底部進度 — 固定高度避免被遮 */}
-      <div style={{ height:50, padding:"0 20px", borderTop:`1px solid ${rbd}`, background:rhd, display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0 }}>
+      <div style={{ padding:"10px 20px", paddingBottom:"max(16px, env(safe-area-inset-bottom))", borderTop:`1px solid ${rbd}`, background:rhd, display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0 }}>
         <span style={{ fontSize:12, color:rmu, whiteSpace:"nowrap" }}>第 {page+1} 頁，共 {pages} 頁</span>
         <div style={{ flex:1, margin:"0 12px", height:4, background:rbd, borderRadius:2 }}>
           <div style={{ height:"100%", background:rac, width:`${progressPct}%`, borderRadius:2, transition:"width 0.2s" }} />
