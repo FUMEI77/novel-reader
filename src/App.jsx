@@ -1,6 +1,3 @@
-bash
-
-cat > /mnt/user-data/outputs/novel-reader.jsx << 'ENDOFFILE'
 import { useState, useEffect, useRef, useCallback } from "react";
 
 // ── 禁止縮放 ──────────────────────────────────────────────────
@@ -566,8 +563,3 @@ export default function App() {
     </div>
   );
 }
-ENDOFFILE
-echo "Done"
-Output
-
-Done
