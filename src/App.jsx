@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from "react";
-import OpenCC from "opencc-js";
 
-const VERSION = "v1.7.1";
+const VERSION = "v1.7.2";
 const CHANGELOG = [
+  { version: "v1.7.2", date: "2026-05", notes: ["修正 OpenCC 使用 CDN 載入", "底部留白修正", "版本資訊移入設定"] },
   { version: "v1.7.1", date: "2026-05", notes: ["修正 OpenCC 載入方式", "最後一行文字遮住修正"] },
   { version: "v1.7.0", date: "2026-05", notes: ["整合 OpenCC 簡繁轉換（台灣正體）", "轉換準確度大幅提升"] },
   { version: "v1.6.1", date: "2026-05", notes: ["關掉翻頁手勢提示", "底部留白修正", "詞彙層級簡繁對照表", "版本號顯示在書庫底部"] },
@@ -23,32 +23,28 @@ const noZoomStyle = `
   input, textarea { -webkit-user-select: text; user-select: text; }
 `;
 
-// ── OpenCC 簡繁轉換 ───────────────────────────────────────────
+// ── OpenCC 簡繁轉換（CDN 載入）──────────────────────────────────
 let _converter = null;
-function getConverter() {
-  if (!_converter) {
-    try {
-      // opencc-js default export has Converter directly
-      const conv = typeof OpenCC === "function" ? OpenCC : (OpenCC.default || OpenCC);
-      if (conv && conv.Converter) {
-        _converter = conv.Converter({ from: "cn", to: "twp" });
-      } else if (typeof conv === "function") {
-        // Some versions export Converter directly
-        _converter = conv({ from: "cn", to: "twp" });
-      } else {
-        _converter = (t) => t;
-      }
-    } catch(e) {
-      console.warn("OpenCC init failed:", e);
-      _converter = (t) => t;
-    }
+let _converterReady = false;
+
+async function initOpenCC() {
+  if (_converterReady) return;
+  try {
+    const mod = await import("https://cdn.jsdelivr.net/npm/opencc-js@1.0.5/dist/esm/cn2t.js");
+    const OpenCC = mod.default || mod;
+    _converter = OpenCC.Converter({ from: "cn", to: "twp" });
+    _converterReady = true;
+  } catch(e) {
+    console.warn("OpenCC load failed:", e);
+    _converter = (t) => t;
+    _converterReady = true;
   }
-  return _converter;
 }
+
 function toTraditional(text) {
   try {
-    const conv = getConverter();
-    return typeof conv === "function" ? conv(text) : text;
+    if (_converter) return _converter(text);
+    return text;
   } catch { return text; }
 }
 
@@ -241,6 +237,7 @@ export default function App() {
     const f = e.target.files[0]; if (!f) return;
     setUploading(true);
     try {
+      await initOpenCC();
       const ab = await f.arrayBuffer();
       const content = parseFile(ab, f.name);
       const book = { id:Date.now().toString(), title:f.name.replace(/\.(txt|epub)$/i,""), author:"未知作者", content, progress:0, page:0, bookmarks:[], addedAt:Date.now() };
@@ -370,8 +367,8 @@ export default function App() {
         <div style={{ marginBottom:8 }}>
           <div style={{ fontSize:12, color:lmu, marginBottom:10, textTransform:"uppercase", letterSpacing:1 }}>關於</div>
           <div style={{ padding:"14px 16px", background:lsf, borderRadius:12, border:`1px solid ${lbd}`, cursor:"pointer" }} onClick={() => setShowInfo(true)}>
-            <div style={{ fontSize:15, color:ltc }}>📖 小說閱讀器 {VERSION}</div>
-            <div style={{ fontSize:12, color:lmu, marginTop:4 }}>查看更新紀錄 ›</div>
+            <div style={{ fontSize:15, color:ltc, fontWeight:"bold" }}>📖 小說閱讀器</div>
+            <div style={{ fontSize:13, color:lac, marginTop:4, fontWeight:"bold" }}>{VERSION} — 查看更新紀錄 ›</div>
           </div>
         </div>
       </div>
@@ -461,7 +458,7 @@ export default function App() {
       <div style={{ padding:"20px 16px 12px", borderBottom:`1px solid ${lbd}`, display:"flex", alignItems:"center", justifyContent:"space-between", background:lhd }}>
         <div style={{ display:"flex", alignItems:"center", gap:8 }}>
           <div style={{ fontSize:22, fontWeight:"bold", color:ltc }}>書庫</div>
-          <button style={{ ...ib(ltc), padding:"4px 6px", fontSize:16, opacity:0.6 }} onClick={() => setShowInfo(true)}>ℹ️</button><button style={{ ...ib(ltc), padding:"4px 6px", fontSize:16, opacity:0.6 }} onClick={() => setView("settings")}>⚙️</button>
+          <button style={{ ...ib(ltc), padding:"4px 6px", fontSize:16, opacity:0.6 }} onClick={() => setView("settings")}>⚙️</button>
         </div>
         <div style={{ display:"flex", gap:4, alignItems:"center" }}>
           <button style={{ ...ib(ltc), fontSize:17, opacity:libMode==="large"?1:0.4 }} onClick={() => setLibMode("large")}>⊞</button>
@@ -549,7 +546,7 @@ export default function App() {
       <div style={{ height:2, background:rbd, flexShrink:0 }}><div style={{ height:"100%", background:rac, width:`${progressPct}%`, transition:"width 0.2s" }} /></div>
 
       {/* 內文 — 禁止滾動，固定顯示 */}
-      <div ref={rdr} style={{ flex:1, overflow:"hidden", padding:"20px 24px 4px 24px", lineHeight:1.95, fontSize:fs, color:rtc, whiteSpace:"pre-wrap", wordBreak:"break-word" }}>
+      <div ref={rdr} style={{ flex:1, overflow:"hidden", padding:"20px 24px 16px 24px", lineHeight:1.95, fontSize:fs, color:rtc, whiteSpace:"pre-wrap", wordBreak:"break-word" }}>
         {pageText}
       </div>
 
