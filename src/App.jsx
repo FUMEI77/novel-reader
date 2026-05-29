@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from "react";
-import * as OpenCC from "opencc-js";
+import OpenCC from "opencc-js";
 
-const VERSION = "v1.7.0";
+const VERSION = "v1.7.1";
 const CHANGELOG = [
-  { version: "v1.7.0", date: "2026-05", notes: ["整合 OpenCC 簡繁轉換（台灣正體）", "轉換準確度大幅提升", "最後一行文字不再被遮住"] },
+  { version: "v1.7.1", date: "2026-05", notes: ["修正 OpenCC 載入方式", "最後一行文字遮住修正"] },
+  { version: "v1.7.0", date: "2026-05", notes: ["整合 OpenCC 簡繁轉換（台灣正體）", "轉換準確度大幅提升"] },
   { version: "v1.6.1", date: "2026-05", notes: ["關掉翻頁手勢提示", "底部留白修正", "詞彙層級簡繁對照表", "版本號顯示在書庫底部"] },
   { version: "v1.6.0", date: "2026-05", notes: ["閱讀器禁止滾動，純翻頁模式", "底部頁數顯示位置修正", "擴充簡繁轉換表（小說常用詞彙）"] },
   { version: "v1.5.1", date: "2026-05", notes: ["修正底部頁碼被 Home Bar 遮住", "改良簡體中文（GBK）自動偵測與轉換"] },
@@ -27,15 +28,28 @@ let _converter = null;
 function getConverter() {
   if (!_converter) {
     try {
-      _converter = OpenCC.Converter({ from: "cn", to: "twp" });
-    } catch {
+      // opencc-js default export has Converter directly
+      const conv = typeof OpenCC === "function" ? OpenCC : (OpenCC.default || OpenCC);
+      if (conv && conv.Converter) {
+        _converter = conv.Converter({ from: "cn", to: "twp" });
+      } else if (typeof conv === "function") {
+        // Some versions export Converter directly
+        _converter = conv({ from: "cn", to: "twp" });
+      } else {
+        _converter = (t) => t;
+      }
+    } catch(e) {
+      console.warn("OpenCC init failed:", e);
       _converter = (t) => t;
     }
   }
   return _converter;
 }
 function toTraditional(text) {
-  try { return getConverter()(text); } catch { return text; }
+  try {
+    const conv = getConverter();
+    return typeof conv === "function" ? conv(text) : text;
+  } catch { return text; }
 }
 
 // ── 簡體偵測（用簡體專有字）────────────────────────────────────
@@ -535,12 +549,12 @@ export default function App() {
       <div style={{ height:2, background:rbd, flexShrink:0 }}><div style={{ height:"100%", background:rac, width:`${progressPct}%`, transition:"width 0.2s" }} /></div>
 
       {/* 內文 — 禁止滾動，固定顯示 */}
-      <div ref={rdr} style={{ flex:1, overflow:"hidden", padding:"20px 24px 0px 24px", lineHeight:1.95, fontSize:fs, color:rtc, whiteSpace:"pre-wrap", wordBreak:"break-word" }}>
+      <div ref={rdr} style={{ flex:1, overflow:"hidden", padding:"20px 24px 4px 24px", lineHeight:1.95, fontSize:fs, color:rtc, whiteSpace:"pre-wrap", wordBreak:"break-word" }}>
         {pageText}
       </div>
 
       {/* 底部進度 — 固定高度避免被遮 */}
-      <div style={{ padding:"14px 20px", paddingBottom:"max(32px, env(safe-area-inset-bottom))", borderTop:`1px solid ${rbd}`, background:rhd, display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0 }}>
+      <div style={{ padding:"14px 20px", paddingBottom:"max(36px, env(safe-area-inset-bottom))", borderTop:`1px solid ${rbd}`, background:rhd, display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0 }}>
         <span style={{ fontSize:12, color:rmu, whiteSpace:"nowrap" }}>第 {page+1} 頁，共 {pages} 頁</span>
         <div style={{ flex:1, margin:"0 12px", height:4, background:rbd, borderRadius:2 }}>
           <div style={{ height:"100%", background:rac, width:`${progressPct}%`, borderRadius:2, transition:"width 0.2s" }} />
