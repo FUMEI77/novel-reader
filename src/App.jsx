@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 
-const VERSION = "v2.0.1";
+const VERSION = "v2.0.2";
 const CHANGELOG = [
+  { version: "v2.0.2", date: "2026-05", notes: ["用 ref 取得實際內文高度分頁", "解決分頁空白過多問題"] },
   { version: "v2.0.1", date: "2026-05", notes: ["統一單一 DOM 測量分頁函數", "精確計算段落高度", "移除所有重複分頁邏輯"] },
   { version: "v2.0.0", date: "2026-05", notes: ["統一使用 DOM 測量分頁系統", "移除 B 套 buildBreaks 分頁", "修正 iOS safe area 左右對稱", "修正重複 jumpCh 函數"] },
   { version: "v1.9.4", date: "2026-05", notes: ["修正大字體時段落缺失問題", "改用更精確的行數計算"] },
@@ -122,9 +123,8 @@ function detectChapters(content) {
 }
 
 // ── 唯一分頁函數：用隱藏 div 實際測量每段落高度 ────────────────
-async function buildPageBreaks(content, fontSize) {
-  const contentW = window.innerWidth - 40;   // 左右各 20px padding
-  const contentH = window.innerHeight - 52 - 2 - 80 - 40; // header+progress+bottom+paddingV
+async function buildPageBreaks(content, fontSize, contentH, contentW) {
+  // contentH and contentW passed from actual ref measurements
 
   const div = document.createElement("div");
   div.style.cssText = [
@@ -210,8 +210,11 @@ export default function App() {
     if (cur) {
       setPageBreaks(null);
       setPage(0);
-      const breaks = await buildPageBreaks(cur.content, newFs);
-      setPageBreaks(breaks);
+      setTimeout(async () => {
+        const { h, w } = getContentDimensions();
+        const breaks = await buildPageBreaks(cur.content, newFs, h, w);
+        setPageBreaks(breaks);
+      }, 50);
     }
   };
   const [bright, setBright] = useState(1);
@@ -235,6 +238,7 @@ export default function App() {
   const fbt = useRef(null);
   const lpTimer = useRef(null);
   const touchRef = useRef({ startX:0, startY:0, fingers:0, startB:1, twoStartY:0 });
+  const contentAreaRef = useRef(null);
 
   useEffect(() => {
     document.addEventListener("gesturestart", e => e.preventDefault(), { passive: false });
@@ -293,6 +297,18 @@ export default function App() {
   function goPageAbs(p) {
     setPage(Math.max(0, p));
   }
+  function getContentDimensions() {
+    if (contentAreaRef.current) {
+      const rect = contentAreaRef.current.getBoundingClientRect();
+      return { h: rect.height, w: rect.width };
+    }
+    // fallback
+    return {
+      h: window.innerHeight - 52 - 2 - 80 - 40,
+      w: window.innerWidth - 40
+    };
+  }
+
   async function openBook(b) {
     setCur(b);
     setPage(b.page||0);
@@ -301,8 +317,12 @@ export default function App() {
     setChaps(false);
     stopTTS();
     setPageBreaks(null);
-    const breaks = await buildPageBreaks(b.content, fs);
-    setPageBreaks(breaks);
+    // Wait for reader DOM to render, then measure
+    setTimeout(async () => {
+      const { h, w } = getContentDimensions();
+      const breaks = await buildPageBreaks(b.content, fs, h, w);
+      setPageBreaks(breaks);
+    }, 50);
   }
   function addBM() { if (!cur) return; const bm = {id:Date.now(), page, label:`第 ${page+1} 頁`}; const u = {...cur, bookmarks:[...cur.bookmarks, bm]}; setCur(u); setBooks(p => p.map(b => b.id===cur.id ? u : b)); dbPut(u); }
   function delBM(id) { const u = {...cur, bookmarks:cur.bookmarks.filter(x => x.id!==id)}; setCur(u); setBooks(p => p.map(b => b.id===cur.id ? u : b)); dbPut(u); }
@@ -638,7 +658,7 @@ export default function App() {
       </div>
 
       {/* 內文 */}
-      <div style={{ flex: 1, overflow: "hidden", paddingTop: 20, paddingBottom: 0, paddingLeft: "max(20px, env(safe-area-inset-left))", paddingRight: "max(20px, env(safe-area-inset-right))", lineHeight: 1.95, fontSize: fs, color: rtc, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+      <div ref={contentAreaRef} style={{ flex: 1, overflow: "hidden", paddingTop: 20, paddingBottom: 0, paddingLeft: "max(20px, env(safe-area-inset-left))", paddingRight: "max(20px, env(safe-area-inset-right))", lineHeight: 1.95, fontSize: fs, color: rtc, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
         {!pageBreaks ? (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: rmu, fontSize: 14 }}>正在計算頁面...</div>
         ) : pageText}
