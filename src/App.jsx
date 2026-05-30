@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 
-const VERSION = "v1.9.3";
+const VERSION = "v1.9.4";
 const CHANGELOG = [
+  { version: "v1.9.4", date: "2026-05", notes: ["修正大字體時段落缺失問題", "改用更精確的行數計算"] },
   { version: "v1.9.3", date: "2026-05", notes: ["修正點擊跳太多頁的問題", "移除重複的 goPage 函數"] },
   { version: "v1.9.2", date: "2026-05", notes: ["放棄 CSS Column，改回精確字數計算翻頁", "解決空白過多問題"] },
   { version: "v1.9.1", date: "2026-05", notes: ["修正 CSS Column 白畫面問題"] },
@@ -602,41 +603,30 @@ export default function App() {
   );
 
   // ── 閱讀器 ──────────────────────────────────────────────────
-  // 精確計算每頁字數
-  function calcPageSize(fontSz) {
+  // 精確計算每頁可顯示行數
+  function buildBreaks(text, fontSz) {
     const W = window.innerWidth || 390;
     const H = window.innerHeight || 844;
-    const headerH = 52;
-    const progressH = 2;
-    const bottomH = 100;
-    const paddingH = 40; // top + bottom padding
-    const paddingW = 40; // left + right padding
-    const contentH = H - headerH - progressH - bottomH - paddingH;
-    const contentW = W - paddingW;
-    // 中文字寬約等於字體大小
-    const charsPerLine = Math.floor(contentW / fontSz);
-    // 行高
+    // 扣除 header(52) + progress(2) + bottom(100) + padding top+bottom(40)
+    const contentH = H - 52 - 2 - 100 - 40;
+    const contentW = W - 40; // 左右各20px
     const lineH = fontSz * 1.95;
     const linesPerPage = Math.floor(contentH / lineH);
-    return Math.max(200, charsPerLine * linesPerPage);
-  }
-
-  function buildBreaks(text, fontSz) {
-    const pageSize = calcPageSize(fontSz);
+    // 中文字寬 = fontSize * 1.0（全形字），英文約 fontSize * 0.6
+    // 保守估計用 fontSize（全形）
+    const charsPerLine = Math.max(1, Math.floor(contentW / fontSz));
     const lines = text.split("\n");
-    const W = window.innerWidth || 390;
-    const charsPerLine = Math.floor((W - 40) / fontSz);
     const breaks = [0];
-    let lineCount = 0;
-    const linesPerPage = Math.floor(calcPageSize(fontSz) / Math.max(1, charsPerLine));
+    let usedLines = 0;
     let pos = 0;
     for (const line of lines) {
-      const lineRows = Math.max(1, Math.ceil(line.length / Math.max(1, charsPerLine)));
-      if (lineCount > 0 && lineCount + lineRows > linesPerPage) {
+      // 空行算1行，非空行計算實際行數
+      const rowCount = line.length === 0 ? 1 : Math.ceil(line.length / charsPerLine);
+      if (usedLines > 0 && usedLines + rowCount > linesPerPage) {
         breaks.push(pos);
-        lineCount = lineRows;
+        usedLines = rowCount;
       } else {
-        lineCount += lineRows;
+        usedLines += rowCount;
       }
       pos += line.length + 1;
     }
