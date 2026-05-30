@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 
-const VERSION = "v1.8.3";
+const VERSION = "v1.8.4";
 const CHANGELOG = [
+  { version: "v1.8.4", date: "2026-05", notes: ["用實際渲染高度計算每頁字數", "不管字體大小都能正確切頁"] },
   { version: "v1.8.3", date: "2026-05", notes: ["根據螢幕高度和字體大小動態計算每頁字數", "翻頁內容更完整不斷行"] },
   { version: "v1.8.2", date: "2026-05", notes: ["改成按段落切頁，不再切斷內容", "段落完整顯示不會不連貫"] },
   { version: "v1.8.1", date: "2026-05", notes: ["修正閱讀器左右留白不對稱", "修正底部文字被切掉"] },
@@ -112,42 +113,7 @@ function detectChapters(content) {
   return chapters;
 }
 
-// 根據螢幕和字體動態計算每頁字數
-function calcCharsPerPage(fontSize, lineHeight) {
-  const screenW = window.innerWidth || 375;
-  const screenH = window.innerHeight || 812;
-  // 扣除 header(~50px) + progressBar(2px) + bottomBar(100px) + padding(40px)
-  const contentH = screenH - 50 - 2 - 100 - 40;
-  // 每行字數 = (螢幕寬 - 左右padding 40px) / 字體寬 (中文約等於fontSize)
-  const charsPerLine = Math.floor((screenW - 40) / fontSize);
-  // 每頁行數 = 內容高 / 行高
-  const linesPerPage = Math.floor(contentH / (fontSize * lineHeight));
-  return Math.max(300, charsPerLine * linesPerPage);
-}
-
-function buildPageBreaks(content, fontSize, lineHeight) {
-  const charsPerPage = calcCharsPerPage(fontSize || 18, lineHeight || 1.95);
-  const paragraphs = content.split("\n");
-  const breaks = [0];
-  let currentSize = 0;
-  let currentPos = 0;
-  for (const para of paragraphs) {
-    const paraLen = para.length + 1;
-    // 估算段落佔用行數（中文字寬約等於fontSize，每行寬度固定）
-    const screenW = window.innerWidth || 375;
-    const charsPerLine = Math.floor((screenW - 40) / (fontSize || 18));
-    const paraLines = Math.ceil(para.length / Math.max(1, charsPerLine)) + 1;
-    const paraSize = paraLines * Math.max(1, charsPerLine);
-    if (currentSize > 0 && currentSize + paraSize > charsPerPage) {
-      breaks.push(currentPos);
-      currentSize = 0;
-    }
-    currentSize += paraSize;
-    currentPos += paraLen;
-  }
-  return breaks;
-}
-
+// DOM 測量式分頁
 function getPage(content, page, breaks) {
   if (!breaks || breaks.length === 0) return content;
   const start = breaks[page] || 0;
@@ -158,6 +124,50 @@ function getPage(content, page, breaks) {
 function totalPages(content, breaks) {
   if (!breaks) return 1;
   return Math.max(1, breaks.length);
+}
+
+// 用隱藏 div 測量段落高度，建立分頁斷點
+async function buildPageBreaksByDOM(content, fontSize, containerH, containerW) {
+  return new Promise((resolve) => {
+    // 建立隱藏測量容器
+    const div = document.createElement("div");
+    div.style.cssText = [
+      "position:fixed", "top:-9999px", "left:-9999px",
+      "width:" + containerW + "px",
+      "padding:0", "margin:0",
+      "font-size:" + fontSize + "px",
+      "line-height:1.95",
+      "font-family:Georgia,'Noto Serif TC',serif",
+      "white-space:pre-wrap",
+      "word-break:break-word",
+      "visibility:hidden",
+      "pointer-events:none"
+    ].join(";");
+    document.body.appendChild(div);
+
+    const paragraphs = content.split("\n");
+    const breaks = [0];
+    let currentH = 0;
+    let currentPos = 0;
+    const maxH = containerH - 20; // 留少許緩衝
+
+    for (const para of paragraphs) {
+      // 測量這個段落的高度
+      div.textContent = para || " ";
+      const paraH = div.getBoundingClientRect().height + (fontSize * 1.95 * 0.5); // 加段落間距
+      
+      if (currentH > 0 && currentH + paraH > maxH) {
+        breaks.push(currentPos);
+        currentH = paraH;
+      } else {
+        currentH += paraH;
+      }
+      currentPos += para.length + 1;
+    }
+
+    document.body.removeChild(div);
+    resolve(breaks);
+  });
 }
 
 const SAMPLE = `第一章\n\n小時候，有一次我在一本描寫原始森林的書裡，看到了一幅精彩的插圖。那本書叫做《真實的故事》。那幅圖畫的是一條蟒蛇，正在吞食一頭猛獸。\n\n在書上說，蟒蛇把獵獲的動物不加咀嚼，整個地吞下去，然後就再也不能動彈了。\n\n第二章\n\n這樣，我只好選擇了另一個職業，學會了開飛機。世界各地差不多我都飛到過。\n\n第三章\n\n就這樣，我孤獨地生活著，直到六年前，在撒哈拉沙漠發生了飛機故障。`;
@@ -188,12 +198,17 @@ export default function App() {
   const [themeKey, setThemeKey] = useState("blue");
   const [fs, setFs] = useState(18);
   // Rebuild page breaks when font size changes
-  const setFsAndRebuild = (newFs) => {
+  const setFsAndRebuild = async (newFs) => {
     setFs(newFs);
     if (cur) {
-      const breaks = buildPageBreaks(cur.content, newFs, 1.95);
-      setPageBreaks(breaks);
+      setPageBreaks(null);
       setPage(0);
+      const screenW = window.innerWidth || 375;
+      const screenH = window.innerHeight || 812;
+      const contentH = screenH - 52 - 2 - 100 - 40;
+      const contentW = screenW - 40;
+      const breaks = await buildPageBreaksByDOM(cur.content, newFs, contentH, contentW);
+      setPageBreaks(breaks);
     }
   };
   const [bright, setBright] = useState(1);
@@ -279,15 +294,25 @@ export default function App() {
     setPage(np);
     if (cur) { const u = {...cur, page:np, progress:np/Math.max(1,pages-1)}; setCur(u); setBooks(prev => prev.map(b => b.id===cur.id ? u : b)); dbPut(u); }
   }
-  function openBook(b) {
-    const breaks = buildPageBreaks(b.content, fs, 1.95);
-    setPageBreaks(breaks);
+  async function openBook(b) {
     setCur(b);
     setPage(b.page||0);
     setView("reader");
     setBms(false);
     setChaps(false);
     stopTTS();
+    setPageBreaks(null); // 先清空，顯示載入中
+    // 測量容器大小
+    const screenW = window.innerWidth || 375;
+    const screenH = window.innerHeight || 812;
+    const headerH = 52;
+    const progressH = 2;
+    const bottomH = 100;
+    const paddingV = 40;
+    const contentH = screenH - headerH - progressH - bottomH - paddingV;
+    const contentW = screenW - 40; // 左右各20px padding
+    const breaks = await buildPageBreaksByDOM(b.content, fs, contentH, contentW);
+    setPageBreaks(breaks);
   }
   function addBM() { if (!cur) return; const bm = {id:Date.now(), page, label:`第 ${page+1} 頁`}; const u = {...cur, bookmarks:[...cur.bookmarks, bm]}; setCur(u); setBooks(p => p.map(b => b.id===cur.id ? u : b)); dbPut(u); }
   function delBM(id) { const u = {...cur, bookmarks:cur.bookmarks.filter(x => x.id!==id)}; setCur(u); setBooks(p => p.map(b => b.id===cur.id ? u : b)); dbPut(u); }
@@ -573,7 +598,8 @@ export default function App() {
   );
 
   // 閱讀器
-  const pageText = cur ? getPage(cur.content, page, pageBreaks) : "";
+  const pageText = cur && pageBreaks ? getPage(cur.content, page, pageBreaks) : "";
+  const isCalculating = cur && !pageBreaks;
   const anyP = bms || chaps;
   return (
     <div style={{ background:rbg, color:rtc, fontFamily:"Georgia,'Noto Serif TC',serif", display:"flex", flexDirection:"column", height:"100vh", width:"100vw", overflow:"hidden", margin:0, padding:0, filter:`brightness(${bright})` }}
@@ -597,7 +623,11 @@ export default function App() {
       </div>}
       <div style={{ height:2, background:rbd, flexShrink:0 }}><div style={{ height:"100%", background:rac, width:`${progressPct}%`, transition:"width 0.2s" }} /></div>
       <div style={{ flex:1, overflow:"hidden", paddingTop:20, paddingLeft:20, paddingRight:20, paddingBottom:0, lineHeight:1.95, fontSize:fs, color:rtc, whiteSpace:"pre-wrap", wordBreak:"break-word", width:"100%", alignSelf:"stretch" }}>
-        {pageText}
+        {isCalculating ? (
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100%", color:rmu, fontSize:14 }}>
+            正在計算頁面...
+          </div>
+        ) : pageText}
       </div>
       <div style={{ height:100, padding:"0 20px", borderTop:`1px solid ${rbd}`, background:rhd, display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0 }}>
         <span style={{ fontSize:12, color:rmu, whiteSpace:"nowrap" }}>第 {page+1} 頁，共 {pages} 頁</span>
