@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 
-const VERSION = "v2.0.6";
+const VERSION = "v2.0.7";
 const CHANGELOG = [
+  { version: "v2.0.7", date: "2026-05", notes: ["底部右側 padding 改為 32px"] },
   { version: "v2.0.6", date: "2026-05", notes: ["安全緩衝改為兩行高度", "底部右側增加內縮距離"] },
   { version: "v2.0.5", date: "2026-05", notes: ["底部 safe area 修正，Home Bar 不遮字", "點擊%可跳轉指定進度", "%顯示改為一位小數"] },
   { version: "v2.0.4", date: "2026-05", notes: ["移除底部進度條", "底部背景改為透明", "只保留頁數和百分比文字"] },
@@ -682,7 +683,7 @@ export default function App() {
       </div>
 
       {/* 底部 */}
-      <div style={{ paddingTop: 12, paddingBottom: "max(12px, env(safe-area-inset-bottom, 16px))", paddingLeft: "max(20px, env(safe-area-inset-left))", paddingRight: "max(24px, env(safe-area-inset-right))", background: rbg, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+      <div style={{ paddingTop: 12, paddingBottom: "max(12px, env(safe-area-inset-bottom, 16px))", paddingLeft: "max(20px, env(safe-area-inset-left))", paddingRight: "max(32px, env(safe-area-inset-right))", background: rbg, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
         <span style={{ fontSize: 12, color: rmu, whiteSpace: "nowrap" }}>第 {safePage + 1} 頁，共 {totalPgs} 頁</span>
         <span style={{ fontSize: 12, color: rmu, whiteSpace: "nowrap", cursor: "pointer", padding: "4px 8px", borderRadius: 6 }}
           onClick={() => { setJumpVal(progressPct); setShowJump(true); }}>{progressPct}%</span>
