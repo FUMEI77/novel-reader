@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 
-const VERSION = "v2.0.0";
+const VERSION = "v2.0.1";
 const CHANGELOG = [
+  { version: "v2.0.1", date: "2026-05", notes: ["統一單一 DOM 測量分頁函數", "精確計算段落高度", "移除所有重複分頁邏輯"] },
   { version: "v2.0.0", date: "2026-05", notes: ["統一使用 DOM 測量分頁系統", "移除 B 套 buildBreaks 分頁", "修正 iOS safe area 左右對稱", "修正重複 jumpCh 函數"] },
   { version: "v1.9.4", date: "2026-05", notes: ["修正大字體時段落缺失問題", "改用更精確的行數計算"] },
   { version: "v1.9.3", date: "2026-05", notes: ["修正點擊跳太多頁的問題", "移除重複的 goPage 函數"] },
@@ -120,63 +121,60 @@ function detectChapters(content) {
   return chapters;
 }
 
-// DOM 測量式分頁
-function getPage(content, page, breaks) {
-  if (!breaks || breaks.length === 0) return content;
+// ── 唯一分頁函數：用隱藏 div 實際測量每段落高度 ────────────────
+async function buildPageBreaks(content, fontSize) {
+  const contentW = window.innerWidth - 40;   // 左右各 20px padding
+  const contentH = window.innerHeight - 52 - 2 - 80 - 40; // header+progress+bottom+paddingV
+
+  const div = document.createElement("div");
+  div.style.cssText = [
+    "position:fixed",
+    "top:-9999px",
+    "left:-9999px",
+    "width:" + contentW + "px",
+    "padding:0",
+    "margin:0",
+    "font-size:" + fontSize + "px",
+    "line-height:1.95",
+    "font-family:Georgia,'Noto Serif TC',serif",
+    "white-space:pre-wrap",
+    "word-break:break-word",
+    "visibility:hidden",
+    "pointer-events:none",
+    "box-sizing:border-box"
+  ].join(";");
+  document.body.appendChild(div);
+
+  const paragraphs = content.split("\n");
+  const breaks = [0];
+  let usedH = 0;
+  let pos = 0;
+  const lineH = fontSize * 1.95; // 單行高度，空行用這個
+
+  for (const para of paragraphs) {
+    div.textContent = para.length > 0 ? para : "​"; // 空行用零寬空格
+    const paraH = para.length > 0
+      ? div.getBoundingClientRect().height + lineH * 0.2  // 段落間距
+      : lineH;                                             // 空行高度
+
+    if (usedH > 0 && usedH + paraH > contentH) {
+      breaks.push(pos);
+      usedH = paraH;
+    } else {
+      usedH += paraH;
+    }
+    pos += para.length + 1;
+  }
+
+  document.body.removeChild(div);
+  return breaks;
+}
+
+function getPageText(content, page, breaks) {
+  if (!breaks || !breaks.length) return content;
   const start = breaks[page] || 0;
   const end = breaks[page + 1] || content.length;
   return content.slice(start, end).trim();
-}
-
-function totalPages(content, breaks) {
-  if (!breaks) return 1;
-  return Math.max(1, breaks.length);
-}
-
-// 用隱藏 div 測量段落高度，建立分頁斷點
-async function buildPageBreaksByDOM(content, fontSize, containerH, containerW) {
-  return new Promise((resolve) => {
-    // 建立隱藏測量容器
-    const div = document.createElement("div");
-    div.style.cssText = [
-      "position:fixed", "top:-9999px", "left:-9999px",
-      "width:" + containerW + "px",
-      "padding:0", "margin:0",
-      "font-size:" + fontSize + "px",
-      "line-height:1.95",
-      "font-family:Georgia,'Noto Serif TC',serif",
-      "white-space:pre-wrap",
-      "word-break:break-word",
-      "visibility:hidden",
-      "pointer-events:none"
-    ].join(";");
-    document.body.appendChild(div);
-
-    const paragraphs = content.split("\n");
-    const breaks = [0];
-    let currentH = 0;
-    let currentPos = 0;
-    const maxH = containerH; // 精確計算
-
-    for (const para of paragraphs) {
-      // 測量這個段落的高度
-      div.textContent = para || "　"; // 空行用全形空格保持高度
-      const measuredH = div.getBoundingClientRect().height;
-      // 段落間距 = 半行高（比之前小很多）
-      const paraH = measuredH + (fontSize * 1.95 * 0.3);
-      
-      if (currentH > 0 && currentH + paraH > maxH) {
-        breaks.push(currentPos);
-        currentH = paraH;
-      } else {
-        currentH += paraH;
-      }
-      currentPos += para.length + 1;
-    }
-
-    document.body.removeChild(div);
-    resolve(breaks);
-  });
 }
 
 const SAMPLE = `第一章\n\n小時候，有一次我在一本描寫原始森林的書裡，看到了一幅精彩的插圖。那本書叫做《真實的故事》。那幅圖畫的是一條蟒蛇，正在吞食一頭猛獸。\n\n在書上說，蟒蛇把獵獲的動物不加咀嚼，整個地吞下去，然後就再也不能動彈了。\n\n第二章\n\n這樣，我只好選擇了另一個職業，學會了開飛機。世界各地差不多我都飛到過。\n\n第三章\n\n就這樣，我孤獨地生活著，直到六年前，在撒哈拉沙漠發生了飛機故障。`;
@@ -212,11 +210,7 @@ export default function App() {
     if (cur) {
       setPageBreaks(null);
       setPage(0);
-      const screenW = window.innerWidth || 375;
-      const screenH = window.innerHeight || 812;
-      const contentH = screenH - 52 - 2 - 100 - 40;
-      const contentW = screenW - 40;
-      const breaks = await buildPageBreaksByDOM(cur.content, newFs, contentH, contentW);
+      const breaks = await buildPageBreaks(cur.content, newFs);
       setPageBreaks(breaks);
     }
   };
@@ -256,7 +250,6 @@ export default function App() {
   function showBF(v) { setBrightFb(Math.round(v*100)); clearTimeout(fbt.current); fbt.current = setTimeout(() => setBrightFb(null), 1200); }
 
   const chapters = cur ? detectChapters(cur.content) : [];
-  const pages = cur ? totalPages(cur.content, pageBreaks) : 1;
 
   function onTouchStart(e) {
     const t = e.touches;
@@ -307,17 +300,8 @@ export default function App() {
     setBms(false);
     setChaps(false);
     stopTTS();
-    setPageBreaks(null); // 先清空，顯示載入中
-    // 測量容器大小
-    const screenW = window.innerWidth || 375;
-    const screenH = window.innerHeight || 812;
-    const headerH = 52;
-    const progressH = 2;
-    const bottomH = 100;
-    const paddingV = 40;
-    const contentH = screenH - headerH - progressH - bottomH - paddingV;
-    const contentW = screenW - 40; // 左右各20px padding
-    const breaks = await buildPageBreaksByDOM(b.content, fs, contentH, contentW);
+    setPageBreaks(null);
+    const breaks = await buildPageBreaks(b.content, fs);
     setPageBreaks(breaks);
   }
   function addBM() { if (!cur) return; const bm = {id:Date.now(), page, label:`第 ${page+1} 頁`}; const u = {...cur, bookmarks:[...cur.bookmarks, bm]}; setCur(u); setBooks(p => p.map(b => b.id===cur.id ? u : b)); dbPut(u); }
@@ -604,15 +588,10 @@ export default function App() {
   );
 
   // ── 閱讀器 ──────────────────────────────────────────────────
-  // ── A套：DOM測量分頁（唯一分頁系統）──────────────────────────
+  // ── 唯一分頁顯示邏輯 ────────────────────────────────────────
   const totalPgs = pageBreaks ? Math.max(1, pageBreaks.length) : 1;
   const safePage = Math.min(page, totalPgs - 1);
-  const pageText = (() => {
-    if (!cur || !pageBreaks) return "";
-    const start = pageBreaks[safePage] || 0;
-    const end = pageBreaks[safePage + 1] || cur.content.length;
-    return cur.content.slice(start, end).trim();
-  })();
+  const pageText = cur && pageBreaks ? getPageText(cur.content, safePage, pageBreaks) : "";
   const progressPct = totalPgs > 1 ? Math.round((safePage / (totalPgs - 1)) * 100) : 100;
 
   function goPage(delta) {
