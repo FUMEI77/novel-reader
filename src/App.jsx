@@ -254,7 +254,6 @@ export default function App() {
 
   const chapters = cur ? detectChapters(cur.content) : [];
   const pages = cur ? totalPages(cur.content, pageBreaks) : 1;
-  const progressPct = pages > 1 ? Math.round((page / (pages-1)) * 100) : 100;
 
   function onTouchStart(e) {
     const t = e.touches;
