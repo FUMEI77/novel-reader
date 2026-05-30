@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 
-const VERSION = "v1.7.3";
+const VERSION = "v1.7.4";
 const CHANGELOG = [
+  { version: "v1.7.4", date: "2026-05", notes: ["設定頁面可以滾動", "底部頁數固定高度不被遮住", "左右 padding 對稱修正"] },
   { version: "v1.7.3", date: "2026-05", notes: ["修正 S2T_MAP 重複 key 錯誤", "OpenCC CDN 載入", "底部留白修正", "版本資訊移入設定"] },
   { version: "v1.6.1", date: "2026-05", notes: ["關掉翻頁手勢提示", "底部留白修正", "詞彙層級簡繁對照表", "版本號顯示在書庫底部"] },
   { version: "v1.6.0", date: "2026-05", notes: ["閱讀器禁止滾動，純翻頁模式", "底部頁數顯示位置修正", "擴充簡繁轉換表"] },
@@ -298,13 +299,13 @@ export default function App() {
 
   // 設定頁面
   if (view === "settings") return (
-    <div style={{ minHeight:"100vh", background:lbg, color:ltc, fontFamily:"Georgia,'Noto Serif TC',serif" }}>
+    <div style={{ height:"100vh", background:lbg, color:ltc, fontFamily:"Georgia,'Noto Serif TC',serif", display:"flex", flexDirection:"column", overflow:"hidden" }}>
       <style>{noZoomStyle}</style>
-      <div style={{ padding:"20px 16px 12px", borderBottom:`1px solid ${lbd}`, display:"flex", alignItems:"center", gap:12, background:lhd }}>
+      <div style={{ padding:"20px 16px 12px", borderBottom:`1px solid ${lbd}`, display:"flex", alignItems:"center", gap:12, background:lhd, flexShrink:0 }}>
         <button style={ib(ltc)} onClick={() => setView("library")}>← 返回</button>
         <div style={{ fontSize:18, fontWeight:"bold" }}>設定</div>
       </div>
-      <div style={{ padding:20 }}>
+      <div style={{ padding:20, overflowY:"auto", flex:1 }}>
         <div style={{ marginBottom:24 }}>
           <div style={{ fontSize:12, color:lmu, marginBottom:10, textTransform:"uppercase", letterSpacing:1 }}>主題</div>
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"14px 16px", background:lsf, borderRadius:12, border:`1px solid ${lbd}` }}>
@@ -497,10 +498,10 @@ export default function App() {
         <button style={{ marginLeft:"auto", background:"none", border:`1px solid ${rbd}`, borderRadius:6, padding:"4px 8px", cursor:"pointer", fontSize:11, color:rtc }} onClick={stopTTS}>停止</button>
       </div>}
       <div style={{ height:2, background:rbd, flexShrink:0 }}><div style={{ height:"100%", background:rac, width:`${progressPct}%`, transition:"width 0.2s" }} /></div>
-      <div style={{ flex:1, overflow:"hidden", padding:"20px 24px 20px 24px", lineHeight:1.95, fontSize:fs, color:rtc, whiteSpace:"pre-wrap", wordBreak:"break-word" }}>
+      <div style={{ flex:1, overflow:"hidden", padding:"20px 20px 0px 20px", lineHeight:1.95, fontSize:fs, color:rtc, whiteSpace:"pre-wrap", wordBreak:"break-word" }}>
         {pageText}
       </div>
-      <div style={{ padding:"14px 20px", paddingBottom:"max(20px, env(safe-area-inset-bottom))", borderTop:`1px solid ${rbd}`, background:rhd, display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0 }}>
+      <div style={{ height:80, padding:"0 20px", borderTop:`1px solid ${rbd}`, background:rhd, display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0 }}>
         <span style={{ fontSize:12, color:rmu, whiteSpace:"nowrap" }}>第 {page+1} 頁，共 {pages} 頁</span>
         <div style={{ flex:1, margin:"0 12px", height:4, background:rbd, borderRadius:2 }}>
           <div style={{ height:"100%", background:rac, width:`${progressPct}%`, borderRadius:2, transition:"width 0.2s" }} />
