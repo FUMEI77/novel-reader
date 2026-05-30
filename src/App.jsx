@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 
-const VERSION = "v2.0.4";
+const VERSION = "v2.0.5";
 const CHANGELOG = [
+  { version: "v2.0.5", date: "2026-05", notes: ["底部 safe area 修正，Home Bar 不遮字", "點擊%可跳轉指定進度", "%顯示改為一位小數"] },
   { version: "v2.0.4", date: "2026-05", notes: ["移除底部進度條", "底部背景改為透明", "只保留頁數和百分比文字"] },
   { version: "v2.0.3", date: "2026-05", notes: ["最後一行截斷修正，加入一行緩衝高度"] },
   { version: "v2.0.2", date: "2026-05", notes: ["用 ref 取得實際內文高度分頁", "解決分頁空白過多問題"] },
@@ -236,6 +237,8 @@ export default function App() {
   const [renameTarget, setRenameTarget] = useState(null);
   const [renameVal, setRenameVal] = useState("");
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [showJump, setShowJump] = useState(false);
+  const [jumpVal, setJumpVal] = useState("");
 
   const fir = useRef(null);
   const utt = useRef(null);
@@ -616,7 +619,7 @@ export default function App() {
   const totalPgs = pageBreaks ? Math.max(1, pageBreaks.length) : 1;
   const safePage = Math.min(page, totalPgs - 1);
   const pageText = cur && pageBreaks ? getPageText(cur.content, safePage, pageBreaks) : "";
-  const progressPct = totalPgs > 1 ? Math.round((safePage / (totalPgs - 1)) * 100) : 100;
+  const progressPct = totalPgs > 1 ? ((safePage / (totalPgs - 1)) * 100).toFixed(1) : "100.0";
 
   function goPage(delta) {
     const np = Math.max(0, Math.min(totalPgs - 1, safePage + delta));
@@ -628,6 +631,15 @@ export default function App() {
       setBooks(prev => prev.map(b => b.id === cur.id ? u : b));
       dbPut(u);
     }
+  }
+
+  function doJump() {
+    const pct = parseFloat(jumpVal);
+    if (isNaN(pct)) { setShowJump(false); return; }
+    const clamped = Math.max(0, Math.min(100, pct));
+    const targetPage = Math.round(clamped / 100 * (totalPgs - 1));
+    goPageAbs(targetPage);
+    setShowJump(false);
   }
 
   const anyP = bms || chaps;
@@ -669,10 +681,39 @@ export default function App() {
       </div>
 
       {/* 底部 */}
-      <div style={{ height: 44, paddingLeft: "max(20px, env(safe-area-inset-left))", paddingRight: "max(20px, env(safe-area-inset-right))", background: rbg, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+      <div style={{ paddingTop: 12, paddingBottom: "max(12px, env(safe-area-inset-bottom, 16px))", paddingLeft: "max(20px, env(safe-area-inset-left))", paddingRight: "max(20px, env(safe-area-inset-right))", background: rbg, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
         <span style={{ fontSize: 12, color: rmu, whiteSpace: "nowrap" }}>第 {safePage + 1} 頁，共 {totalPgs} 頁</span>
-        <span style={{ fontSize: 12, color: rmu, whiteSpace: "nowrap" }}>{progressPct}%</span>
+        <span style={{ fontSize: 12, color: rmu, whiteSpace: "nowrap", cursor: "pointer", padding: "4px 8px", borderRadius: 6 }}
+          onClick={() => { setJumpVal(progressPct); setShowJump(true); }}>{progressPct}%</span>
       </div>
+
+      {/* 跳轉進度 Modal */}
+      {showJump && <>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,30,60,0.4)", zIndex: 299 }} onClick={() => setShowJump(false)} />
+        <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", width: "85%", maxWidth: 340, background: lsf, borderRadius: 18, zIndex: 300, overflow: "hidden", boxShadow: "0 8px 32px rgba(0,60,120,0.2)" }}>
+          <div style={{ padding: "20px 20px 12px", borderBottom: `1px solid ${lbd}` }}>
+            <div style={{ fontWeight: "bold", fontSize: 16, color: ltc, marginBottom: 14 }}>跳轉進度</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="0.1"
+                value={jumpVal}
+                onChange={e => setJumpVal(e.target.value)}
+                style={{ flex: 1, padding: "10px 14px", borderRadius: 10, border: `1px solid ${lbd}`, fontSize: 16, color: ltc, background: lsf2, outline: "none" }}
+                autoFocus
+                onKeyDown={e => { if (e.key === "Enter") doJump(); }}
+              />
+              <span style={{ fontSize: 14, color: lmu }}>%</span>
+            </div>
+          </div>
+          <div style={{ display: "flex", borderTop: `1px solid ${lbd}` }}>
+            <button style={{ flex: 1, padding: "14px", background: "none", border: "none", cursor: "pointer", fontSize: 15, color: lmu, borderRight: `1px solid ${lbd}` }} onClick={() => setShowJump(false)}>取消</button>
+            <button style={{ flex: 1, padding: "14px", background: "none", border: "none", cursor: "pointer", fontSize: 15, color: lac, fontWeight: "bold" }} onClick={doJump}>確認</button>
+          </div>
+        </div>
+      </>}
 
       {anyP && <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)", zIndex: 99 }} onClick={() => { setBms(false); setChaps(false); }} />}
 
