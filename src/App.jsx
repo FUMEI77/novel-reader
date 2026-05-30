@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 
-const VERSION = "v1.8.1";
+const VERSION = "v1.8.2";
 const CHANGELOG = [
+  { version: "v1.8.2", date: "2026-05", notes: ["改成按段落切頁，不再切斷內容", "段落完整顯示不會不連貫"] },
   { version: "v1.8.1", date: "2026-05", notes: ["修正閱讀器左右留白不對稱", "修正底部文字被切掉"] },
   { version: "v1.8.0", date: "2026-05", notes: ["修正左右留白不對稱", "修正最後一行被遮住", "新增7個主題顏色", "書庫和閱讀器同步套用主題"] },
   { version: "v1.7.4", date: "2026-05", notes: ["設定頁面可以滾動", "底部頁數固定高度不被遮住", "左右 padding 對稱修正"] },
@@ -110,9 +111,36 @@ function detectChapters(content) {
   return chapters;
 }
 
-const PAGE_SIZE = 3000;
-function getPage(content, page) { return content.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE); }
-function totalPages(content) { return Math.max(1, Math.ceil(content.length / PAGE_SIZE)); }
+const TARGET_PAGE_SIZE = 1500; // 目標每頁字數
+
+function buildPageBreaks(content) {
+  const paragraphs = content.split("\n");
+  const breaks = [0]; // 每頁的起始字元位置
+  let currentSize = 0;
+  let currentPos = 0;
+  for (const para of paragraphs) {
+    const paraLen = para.length + 1; // +1 for newline
+    if (currentSize > 0 && currentSize + paraLen > TARGET_PAGE_SIZE) {
+      breaks.push(currentPos);
+      currentSize = 0;
+    }
+    currentSize += paraLen;
+    currentPos += paraLen;
+  }
+  return breaks;
+}
+
+function getPage(content, page, breaks) {
+  if (!breaks || breaks.length === 0) return content;
+  const start = breaks[page] || 0;
+  const end = breaks[page + 1] || content.length;
+  return content.slice(start, end).trim();
+}
+
+function totalPages(content, breaks) {
+  if (!breaks) return 1;
+  return Math.max(1, breaks.length);
+}
 
 const SAMPLE = `第一章\n\n小時候，有一次我在一本描寫原始森林的書裡，看到了一幅精彩的插圖。那本書叫做《真實的故事》。那幅圖畫的是一條蟒蛇，正在吞食一頭猛獸。\n\n在書上說，蟒蛇把獵獲的動物不加咀嚼，整個地吞下去，然後就再也不能動彈了。\n\n第二章\n\n這樣，我只好選擇了另一個職業，學會了開飛機。世界各地差不多我都飛到過。\n\n第三章\n\n就這樣，我孤獨地生活著，直到六年前，在撒哈拉沙漠發生了飛機故障。`;
 const SAMPLE_BOOK = { id: "sample1", title: "小王子（範例）", author: "聖-埃克蘇佩里", content: SAMPLE, progress: 0, page: 0, bookmarks: [], addedAt: Date.now() };
@@ -146,6 +174,7 @@ export default function App() {
   const [chaps, setChaps] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
   const [page, setPage] = useState(0);
+  const [pageBreaks, setPageBreaks] = useState(null);
   const [tts, setTts] = useState(false);
   const [rate, setRate] = useState(1);
   const [brightFb, setBrightFb] = useState(null);
@@ -176,7 +205,7 @@ export default function App() {
   function showBF(v) { setBrightFb(Math.round(v*100)); clearTimeout(fbt.current); fbt.current = setTimeout(() => setBrightFb(null), 1200); }
 
   const chapters = cur ? detectChapters(cur.content) : [];
-  const pages = cur ? totalPages(cur.content) : 1;
+  const pages = cur ? totalPages(cur.content, pageBreaks) : 1;
   const progressPct = pages > 1 ? Math.round((page / (pages-1)) * 100) : 100;
 
   function onTouchStart(e) {
@@ -223,11 +252,30 @@ export default function App() {
     setPage(np);
     if (cur) { const u = {...cur, page:np, progress:np/Math.max(1,pages-1)}; setCur(u); setBooks(prev => prev.map(b => b.id===cur.id ? u : b)); dbPut(u); }
   }
-  function openBook(b) { setCur(b); setPage(b.page||0); setView("reader"); setBms(false); setChaps(false); stopTTS(); }
+  function openBook(b) {
+    const breaks = buildPageBreaks(b.content);
+    setPageBreaks(breaks);
+    setCur(b);
+    setPage(b.page||0);
+    setView("reader");
+    setBms(false);
+    setChaps(false);
+    stopTTS();
+  }
   function addBM() { if (!cur) return; const bm = {id:Date.now(), page, label:`第 ${page+1} 頁`}; const u = {...cur, bookmarks:[...cur.bookmarks, bm]}; setCur(u); setBooks(p => p.map(b => b.id===cur.id ? u : b)); dbPut(u); }
   function delBM(id) { const u = {...cur, bookmarks:cur.bookmarks.filter(x => x.id!==id)}; setCur(u); setBooks(p => p.map(b => b.id===cur.id ? u : b)); dbPut(u); }
   function jumpBM(bm) { goPage(bm.page); setBms(false); }
-  function jumpCh(ch) { goPage(Math.floor(ch.charOffset/PAGE_SIZE)); setChaps(false); }
+  function jumpCh(ch) {
+    if (!pageBreaks) return;
+    // Find which page contains this char offset
+    let targetPage = 0;
+    for (let i = 0; i < pageBreaks.length; i++) {
+      if (pageBreaks[i] <= ch.charOffset) targetPage = i;
+      else break;
+    }
+    goPage(targetPage);
+    setChaps(false);
+  }
   function doDelete(id) { setBooks(p => p.filter(b => b.id!==id)); dbDelete(id); setDeleteTarget(null); setCtxMenu(null); }
   function doRename() {
     if (!renameVal.trim()) return;
@@ -252,7 +300,7 @@ export default function App() {
   function stopTTS() { window.speechSynthesis?.cancel(); setTts(false); }
   function startTTS() {
     if (!cur || !window.speechSynthesis) return; stopTTS();
-    const u = new SpeechSynthesisUtterance(getPage(cur.content, page));
+    const u = new SpeechSynthesisUtterance(getPage(cur.content, page, pageBreaks));
     u.lang = "zh-TW"; u.rate = rate; u.onend = () => setTts(false);
     utt.current = u; window.speechSynthesis.speak(u); setTts(true);
   }
@@ -498,7 +546,7 @@ export default function App() {
   );
 
   // 閱讀器
-  const pageText = cur ? getPage(cur.content, page) : "";
+  const pageText = cur ? getPage(cur.content, page, pageBreaks) : "";
   const anyP = bms || chaps;
   return (
     <div style={{ background:rbg, color:rtc, fontFamily:"Georgia,'Noto Serif TC',serif", display:"flex", flexDirection:"column", height:"100vh", width:"100vw", overflow:"hidden", margin:0, padding:0, filter:`brightness(${bright})` }}
