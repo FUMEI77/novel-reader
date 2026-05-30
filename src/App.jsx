@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 
-const VERSION = "v1.7.4";
+const VERSION = "v1.8.0";
 const CHANGELOG = [
+  { version: "v1.8.0", date: "2026-05", notes: ["修正左右留白不對稱", "修正最後一行被遮住", "新增7個主題顏色", "書庫和閱讀器同步套用主題"] },
   { version: "v1.7.4", date: "2026-05", notes: ["設定頁面可以滾動", "底部頁數固定高度不被遮住", "左右 padding 對稱修正"] },
   { version: "v1.7.3", date: "2026-05", notes: ["修正 S2T_MAP 重複 key 錯誤", "OpenCC CDN 載入", "底部留白修正", "版本資訊移入設定"] },
   { version: "v1.6.1", date: "2026-05", notes: ["關掉翻頁手勢提示", "底部留白修正", "詞彙層級簡繁對照表", "版本號顯示在書庫底部"] },
@@ -117,6 +118,17 @@ const SAMPLE_BOOK = { id: "sample1", title: "小王子（範例）", author: "�
 
 const FSZ = [14, 16, 18, 20, 22, 24, 28];
 const CC = [["#5b8db8","#2d6a9f"],["#4a9b8e","#2d7a6e"],["#7b6eb0","#5a4d8f"],["#c4704a","#8b4a2e"],["#5a8a5a","#3a6a3a"]];
+
+const THEMES = {
+  blue:   { name:"🔵 海洋藍", ac:"#2e7fb8", bg:"#eef4f9", sf:"#ffffff", hd:"#daeaf8", bd:"#c8dfef", tc:"#1a3a50", mu:"#7aaac8", sf2:"#f0f7ff", dbg:"#0f1a24", dsf:"#162030", dhd:"#162030", dbd:"#243a50", dtc:"#d0e4f0", dmu:"#6a9ab8", dac:"#4a9fd4", dsf2:"#1a2a3a" },
+  pink:   { name:"🌸 玫瑰粉", ac:"#c4607a", bg:"#fff0f3", sf:"#ffffff", hd:"#fde0e6", bd:"#f5c0cc", tc:"#4a1a24", mu:"#c48090", sf2:"#fff5f7", dbg:"#1a0f12", dsf:"#2a1520", dhd:"#2a1520", dbd:"#3a2030", dtc:"#f0d0d8", dmu:"#b87888", dac:"#e07090", dsf2:"#2a1828" },
+  green:  { name:"🌿 森林綠", ac:"#3a8a5a", bg:"#f0f8f2", sf:"#ffffff", hd:"#d8f0e0", bd:"#b8dfc8", tc:"#1a3a28", mu:"#6aaa88", sf2:"#f0fff5", dbg:"#0f1a12", dsf:"#162018", dhd:"#162018", dbd:"#203a28", dtc:"#d0f0d8", dmu:"#68a880", dac:"#4ab870", dsf2:"#182a20" },
+  purple: { name:"💜 淡紫色", ac:"#8a60c4", bg:"#f5f0ff", sf:"#ffffff", hd:"#ede0ff", bd:"#d8c8f5", tc:"#2a1a4a", mu:"#9a80c8", sf2:"#f8f5ff", dbg:"#150f1a", dsf:"#201528", dhd:"#201528", dbd:"#302040", dtc:"#e0d0f8", dmu:"#9878c0", dac:"#a878e8", dsf2:"#281a38" },
+  orange: { name:"☀️ 暖陽橙", ac:"#c47030", bg:"#fff8f0", sf:"#ffffff", hd:"#ffe8d0", bd:"#f5d0a8", tc:"#3a2010", mu:"#c89060", sf2:"#fff5ee", dbg:"#1a1208", dsf:"#281a10", dhd:"#281a10", dbd:"#3a2818", dtc:"#f0d8c0", dmu:"#b88060", dac:"#e08840", dsf2:"#301e12" },
+  white:  { name:"🤍 純淨白", ac:"#555555", bg:"#f8f8f8", sf:"#ffffff", hd:"#eeeeee", bd:"#dddddd", tc:"#222222", mu:"#888888", sf2:"#f5f5f5", dbg:"#111111", dsf:"#1a1a1a", dhd:"#141414", dbd:"#2a2a2a", dtc:"#e8e8e8", dmu:"#888888", dac:"#aaaaaa", dsf2:"#222222" },
+  dark:   { name:"🖤 深色", ac:"#6a9ad4", bg:"#181818", sf:"#222222", hd:"#1a1a1a", bd:"#333333", tc:"#e0e0e0", mu:"#888888", sf2:"#282828", dbg:"#0a0a0a", dsf:"#141414", dhd:"#111111", dbd:"#252525", dtc:"#e8e8e8", dmu:"#888888", dac:"#6a9ad4", dsf2:"#1c1c1c" },
+};
+
 const DEFAULT_GESTURES = { nextPage: "tap_right", prevPage: "two_tap", brightness: "two_swipe" };
 
 export default function App() {
@@ -126,6 +138,7 @@ export default function App() {
   const [view, setView] = useState("library");
   const [libMode, setLibMode] = useState("large");
   const [dark, setDark] = useState(false);
+  const [themeKey, setThemeKey] = useState("blue");
   const [fs, setFs] = useState(18);
   const [bright, setBright] = useState(1);
   const [bms, setBms] = useState(false);
@@ -245,21 +258,22 @@ export default function App() {
   function toggleTTS() { tts ? stopTTS() : startTTS(); }
   useEffect(() => () => stopTTS(), []);
 
-  // 顏色
-  const lbg = dark ? "#0f1a24" : "#eef4f9";
-  const lsf = dark ? "#162030" : "#ffffff";
-  const lsf2 = dark ? "#1a2a3a" : "#f0f7ff";
-  const ltc = dark ? "#d0e4f0" : "#1a3a50";
-  const lmu = dark ? "#6a9ab8" : "#7aaac8";
-  const lac = dark ? "#4a9fd4" : "#2e7fb8";
-  const lbd = dark ? "#243a50" : "#c8dfef";
-  const lhd = dark ? "#162030" : "#daeaf8";
+  // 主題顏色
+  const th = THEMES[themeKey] || THEMES.blue;
+  const lbg = dark ? th.dbg : th.bg;
+  const lsf = dark ? th.dsf : th.sf;
+  const lsf2 = dark ? th.dsf2 : th.sf2;
+  const ltc = dark ? th.dtc : th.tc;
+  const lmu = dark ? th.dmu : th.mu;
+  const lac = dark ? th.dac : th.ac;
+  const lbd = dark ? th.dbd : th.bd;
+  const lhd = dark ? th.dhd : th.hd;
   const rbg = dark ? "#1a1a1a" : "#ffffff";
   const rtc = dark ? "#e8e0d0" : "#1a1a1a";
   const rmu = dark ? "#888" : "#999";
-  const rac = dark ? "#4a9fd4" : "#2e7fb8";
+  const rac = dark ? th.dac : th.ac;
   const rbd = dark ? "#333" : "#e8e8e8";
-  const rhd = dark ? "#111" : "#f8f8f8";
+  const rhd = dark ? "#111" : th.hd;
 
   const ib = (color) => ({ background:"none", border:"none", cursor:"pointer", padding:"8px 10px", borderRadius:8, fontSize:14, color });
   const pn = { position:"fixed", top:0, right:0, bottom:0, width:290, background:lsf, borderLeft:`1px solid ${lbd}`, zIndex:100, display:"flex", flexDirection:"column", boxShadow:"-4px 0 24px rgba(0,80,150,0.15)" };
@@ -340,6 +354,14 @@ export default function App() {
           <div style={{ fontSize:12, color:lmu, marginBottom:10, textTransform:"uppercase", letterSpacing:1 }}>亮度調整手勢</div>
           <GestureOption label="✌️ 兩指上下滑動（預設）" value="two_swipe" current={gestures.brightness} onChange={v => setGestures(g=>({...g,brightness:v}))} />
           <GestureOption label="🚫 關閉（僅用滑桿）" value="disabled" current={gestures.brightness} onChange={v => setGestures(g=>({...g,brightness:v}))} />
+        </div>
+        <div style={{ marginBottom:24 }}>
+          <div style={{ fontSize:12, color:lmu, marginBottom:10, textTransform:"uppercase", letterSpacing:1 }}>介面主題</div>
+          <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+            {Object.entries(THEMES).map(([key, th]) => (
+              <button key={key} style={{ padding:"8px 14px", borderRadius:10, border:`2px solid ${themeKey===key?lac:lbd}`, cursor:"pointer", fontSize:13, background:themeKey===key?lac:lsf, color:themeKey===key?"#fff":ltc, fontWeight:themeKey===key?"bold":"normal" }} onClick={() => setThemeKey(key)}>{th.name}</button>
+            ))}
+          </div>
         </div>
         <div>
           <div style={{ fontSize:12, color:lmu, marginBottom:10, textTransform:"uppercase", letterSpacing:1 }}>關於</div>
@@ -498,10 +520,10 @@ export default function App() {
         <button style={{ marginLeft:"auto", background:"none", border:`1px solid ${rbd}`, borderRadius:6, padding:"4px 8px", cursor:"pointer", fontSize:11, color:rtc }} onClick={stopTTS}>停止</button>
       </div>}
       <div style={{ height:2, background:rbd, flexShrink:0 }}><div style={{ height:"100%", background:rac, width:`${progressPct}%`, transition:"width 0.2s" }} /></div>
-      <div style={{ flex:1, overflow:"hidden", padding:"20px 20px 0px 20px", lineHeight:1.95, fontSize:fs, color:rtc, whiteSpace:"pre-wrap", wordBreak:"break-word" }}>
+      <div style={{ flex:1, overflow:"hidden", padding:"20px 20px 0 20px", lineHeight:1.95, fontSize:fs, color:rtc, whiteSpace:"pre-wrap", wordBreak:"break-word" }}>
         {pageText}
       </div>
-      <div style={{ height:80, padding:"0 20px", borderTop:`1px solid ${rbd}`, background:rhd, display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0 }}>
+      <div style={{ height:90, padding:"0 20px", borderTop:`1px solid ${rbd}`, background:rhd, display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0 }}>
         <span style={{ fontSize:12, color:rmu, whiteSpace:"nowrap" }}>第 {page+1} 頁，共 {pages} 頁</span>
         <div style={{ flex:1, margin:"0 12px", height:4, background:rbd, borderRadius:2 }}>
           <div style={{ height:"100%", background:rac, width:`${progressPct}%`, borderRadius:2, transition:"width 0.2s" }} />
