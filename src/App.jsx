@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 
-const VERSION = "v1.8.4";
+const VERSION = "v1.8.5";
 const CHANGELOG = [
+  { version: "v1.8.5", date: "2026-05", notes: ["修正每頁空白過多問題", "段落間距計算更精確"] },
   { version: "v1.8.4", date: "2026-05", notes: ["用實際渲染高度計算每頁字數", "不管字體大小都能正確切頁"] },
   { version: "v1.8.3", date: "2026-05", notes: ["根據螢幕高度和字體大小動態計算每頁字數", "翻頁內容更完整不斷行"] },
   { version: "v1.8.2", date: "2026-05", notes: ["改成按段落切頁，不再切斷內容", "段落完整顯示不會不連貫"] },
@@ -149,12 +150,14 @@ async function buildPageBreaksByDOM(content, fontSize, containerH, containerW) {
     const breaks = [0];
     let currentH = 0;
     let currentPos = 0;
-    const maxH = containerH - 20; // 留少許緩衝
+    const maxH = containerH; // 精確計算
 
     for (const para of paragraphs) {
       // 測量這個段落的高度
-      div.textContent = para || " ";
-      const paraH = div.getBoundingClientRect().height + (fontSize * 1.95 * 0.5); // 加段落間距
+      div.textContent = para || "　"; // 空行用全形空格保持高度
+      const measuredH = div.getBoundingClientRect().height;
+      // 段落間距 = 半行高（比之前小很多）
+      const paraH = measuredH + (fontSize * 1.95 * 0.3);
       
       if (currentH > 0 && currentH + paraH > maxH) {
         breaks.push(currentPos);
