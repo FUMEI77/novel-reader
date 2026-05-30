@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 
-const VERSION = "v1.8.0";
+const VERSION = "v1.8.1";
 const CHANGELOG = [
+  { version: "v1.8.1", date: "2026-05", notes: ["修正閱讀器左右留白不對稱", "修正底部文字被切掉"] },
   { version: "v1.8.0", date: "2026-05", notes: ["修正左右留白不對稱", "修正最後一行被遮住", "新增7個主題顏色", "書庫和閱讀器同步套用主題"] },
   { version: "v1.7.4", date: "2026-05", notes: ["設定頁面可以滾動", "底部頁數固定高度不被遮住", "左右 padding 對稱修正"] },
   { version: "v1.7.3", date: "2026-05", notes: ["修正 S2T_MAP 重複 key 錯誤", "OpenCC CDN 載入", "底部留白修正", "版本資訊移入設定"] },
@@ -500,7 +501,7 @@ export default function App() {
   const pageText = cur ? getPage(cur.content, page) : "";
   const anyP = bms || chaps;
   return (
-    <div style={{ background:rbg, color:rtc, fontFamily:"Georgia,'Noto Serif TC',serif", display:"flex", flexDirection:"column", height:"100vh", width:"100vw", overflow:"hidden", filter:`brightness(${bright})` }}
+    <div style={{ background:rbg, color:rtc, fontFamily:"Georgia,'Noto Serif TC',serif", display:"flex", flexDirection:"column", height:"100vh", width:"100vw", overflow:"hidden", margin:0, padding:0, filter:`brightness(${bright})` }}
       onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
       <style>{noZoomStyle}</style>
       {brightFb !== null && <div style={{ position:"fixed", top:"50%", left:"50%", transform:"translate(-50%,-50%)", background:"rgba(0,0,0,0.75)", color:"#fff", borderRadius:16, padding:"14px 24px", fontSize:22, fontWeight:"bold", zIndex:300, pointerEvents:"none" }}>☀️ {brightFb}%</div>}
@@ -520,10 +521,10 @@ export default function App() {
         <button style={{ marginLeft:"auto", background:"none", border:`1px solid ${rbd}`, borderRadius:6, padding:"4px 8px", cursor:"pointer", fontSize:11, color:rtc }} onClick={stopTTS}>停止</button>
       </div>}
       <div style={{ height:2, background:rbd, flexShrink:0 }}><div style={{ height:"100%", background:rac, width:`${progressPct}%`, transition:"width 0.2s" }} /></div>
-      <div style={{ flex:1, overflow:"hidden", padding:"20px 20px 0 20px", lineHeight:1.95, fontSize:fs, color:rtc, whiteSpace:"pre-wrap", wordBreak:"break-word" }}>
+      <div style={{ flex:1, overflow:"hidden", paddingTop:20, paddingLeft:20, paddingRight:20, paddingBottom:0, lineHeight:1.95, fontSize:fs, color:rtc, whiteSpace:"pre-wrap", wordBreak:"break-word", width:"100%", alignSelf:"stretch" }}>
         {pageText}
       </div>
-      <div style={{ height:90, padding:"0 20px", borderTop:`1px solid ${rbd}`, background:rhd, display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0 }}>
+      <div style={{ height:100, padding:"0 20px", borderTop:`1px solid ${rbd}`, background:rhd, display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0 }}>
         <span style={{ fontSize:12, color:rmu, whiteSpace:"nowrap" }}>第 {page+1} 頁，共 {pages} 頁</span>
         <div style={{ flex:1, margin:"0 12px", height:4, background:rbd, borderRadius:2 }}>
           <div style={{ height:"100%", background:rac, width:`${progressPct}%`, borderRadius:2, transition:"width 0.2s" }} />
