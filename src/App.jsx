@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 
-const VERSION = "v1.8.2";
+const VERSION = "v1.8.3";
 const CHANGELOG = [
+  { version: "v1.8.3", date: "2026-05", notes: ["根據螢幕高度和字體大小動態計算每頁字數", "翻頁內容更完整不斷行"] },
   { version: "v1.8.2", date: "2026-05", notes: ["改成按段落切頁，不再切斷內容", "段落完整顯示不會不連貫"] },
   { version: "v1.8.1", date: "2026-05", notes: ["修正閱讀器左右留白不對稱", "修正底部文字被切掉"] },
   { version: "v1.8.0", date: "2026-05", notes: ["修正左右留白不對稱", "修正最後一行被遮住", "新增7個主題顏色", "書庫和閱讀器同步套用主題"] },
@@ -111,20 +112,37 @@ function detectChapters(content) {
   return chapters;
 }
 
-const TARGET_PAGE_SIZE = 1500; // 目標每頁字數
+// 根據螢幕和字體動態計算每頁字數
+function calcCharsPerPage(fontSize, lineHeight) {
+  const screenW = window.innerWidth || 375;
+  const screenH = window.innerHeight || 812;
+  // 扣除 header(~50px) + progressBar(2px) + bottomBar(100px) + padding(40px)
+  const contentH = screenH - 50 - 2 - 100 - 40;
+  // 每行字數 = (螢幕寬 - 左右padding 40px) / 字體寬 (中文約等於fontSize)
+  const charsPerLine = Math.floor((screenW - 40) / fontSize);
+  // 每頁行數 = 內容高 / 行高
+  const linesPerPage = Math.floor(contentH / (fontSize * lineHeight));
+  return Math.max(300, charsPerLine * linesPerPage);
+}
 
-function buildPageBreaks(content) {
+function buildPageBreaks(content, fontSize, lineHeight) {
+  const charsPerPage = calcCharsPerPage(fontSize || 18, lineHeight || 1.95);
   const paragraphs = content.split("\n");
-  const breaks = [0]; // 每頁的起始字元位置
+  const breaks = [0];
   let currentSize = 0;
   let currentPos = 0;
   for (const para of paragraphs) {
-    const paraLen = para.length + 1; // +1 for newline
-    if (currentSize > 0 && currentSize + paraLen > TARGET_PAGE_SIZE) {
+    const paraLen = para.length + 1;
+    // 估算段落佔用行數（中文字寬約等於fontSize，每行寬度固定）
+    const screenW = window.innerWidth || 375;
+    const charsPerLine = Math.floor((screenW - 40) / (fontSize || 18));
+    const paraLines = Math.ceil(para.length / Math.max(1, charsPerLine)) + 1;
+    const paraSize = paraLines * Math.max(1, charsPerLine);
+    if (currentSize > 0 && currentSize + paraSize > charsPerPage) {
       breaks.push(currentPos);
       currentSize = 0;
     }
-    currentSize += paraLen;
+    currentSize += paraSize;
     currentPos += paraLen;
   }
   return breaks;
@@ -169,6 +187,15 @@ export default function App() {
   const [dark, setDark] = useState(false);
   const [themeKey, setThemeKey] = useState("blue");
   const [fs, setFs] = useState(18);
+  // Rebuild page breaks when font size changes
+  const setFsAndRebuild = (newFs) => {
+    setFs(newFs);
+    if (cur) {
+      const breaks = buildPageBreaks(cur.content, newFs, 1.95);
+      setPageBreaks(breaks);
+      setPage(0);
+    }
+  };
   const [bright, setBright] = useState(1);
   const [bms, setBms] = useState(false);
   const [chaps, setChaps] = useState(false);
@@ -253,7 +280,7 @@ export default function App() {
     if (cur) { const u = {...cur, page:np, progress:np/Math.max(1,pages-1)}; setCur(u); setBooks(prev => prev.map(b => b.id===cur.id ? u : b)); dbPut(u); }
   }
   function openBook(b) {
-    const breaks = buildPageBreaks(b.content);
+    const breaks = buildPageBreaks(b.content, fs, 1.95);
     setPageBreaks(breaks);
     setCur(b);
     setPage(b.page||0);
@@ -379,7 +406,7 @@ export default function App() {
         <div style={{ marginBottom:24 }}>
           <div style={{ fontSize:12, color:lmu, marginBottom:10, textTransform:"uppercase", letterSpacing:1 }}>閱讀字體大小</div>
           <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-            {FSZ.map(s => <button key={s} style={{ padding:"9px 13px", borderRadius:10, border:`1px solid ${fs===s?lac:lbd}`, cursor:"pointer", fontSize:14, background:fs===s?lac:lsf, color:fs===s?"#fff":ltc, fontWeight:fs===s?"bold":"normal" }} onClick={() => setFs(s)}>{s}</button>)}
+            {FSZ.map(s => <button key={s} style={{ padding:"9px 13px", borderRadius:10, border:`1px solid ${fs===s?lac:lbd}`, cursor:"pointer", fontSize:14, background:fs===s?lac:lsf, color:fs===s?"#fff":ltc, fontWeight:fs===s?"bold":"normal" }} onClick={() => setFsAndRebuild(s)}>{s}</button>)}
           </div>
         </div>
         <div style={{ marginBottom:24 }}>
