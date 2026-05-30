@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 
-const VERSION = "v2.0.2";
+const VERSION = "v2.0.3";
 const CHANGELOG = [
+  { version: "v2.0.3", date: "2026-05", notes: ["最後一行截斷修正，加入一行緩衝高度"] },
   { version: "v2.0.2", date: "2026-05", notes: ["用 ref 取得實際內文高度分頁", "解決分頁空白過多問題"] },
   { version: "v2.0.1", date: "2026-05", notes: ["統一單一 DOM 測量分頁函數", "精確計算段落高度", "移除所有重複分頁邏輯"] },
   { version: "v2.0.0", date: "2026-05", notes: ["統一使用 DOM 測量分頁系統", "移除 B 套 buildBreaks 分頁", "修正 iOS safe area 左右對稱", "修正重複 jumpCh 函數"] },
@@ -126,6 +127,9 @@ function detectChapters(content) {
 async function buildPageBreaks(content, fontSize, contentH, contentW) {
   // contentH and contentW passed from actual ref measurements
 
+  const lineH = fontSize * 1.95;
+  const safeH = contentH - lineH; // 預留一行緩衝，避免最後一行被截斷
+
   const div = document.createElement("div");
   div.style.cssText = [
     "position:fixed",
@@ -149,7 +153,6 @@ async function buildPageBreaks(content, fontSize, contentH, contentW) {
   const breaks = [0];
   let usedH = 0;
   let pos = 0;
-  const lineH = fontSize * 1.95; // 單行高度，空行用這個
 
   for (const para of paragraphs) {
     div.textContent = para.length > 0 ? para : "​"; // 空行用零寬空格
@@ -157,7 +160,7 @@ async function buildPageBreaks(content, fontSize, contentH, contentW) {
       ? div.getBoundingClientRect().height + lineH * 0.2  // 段落間距
       : lineH;                                             // 空行高度
 
-    if (usedH > 0 && usedH + paraH > contentH) {
+    if (usedH > 0 && usedH + paraH > safeH) {
       breaks.push(pos);
       usedH = paraH;
     } else {
