@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 
-const VERSION = "v1.9.4";
+const VERSION = "v2.0.0";
 const CHANGELOG = [
+  { version: "v2.0.0", date: "2026-05", notes: ["統一使用 DOM 測量分頁系統", "移除 B 套 buildBreaks 分頁", "修正 iOS safe area 左右對稱", "修正重複 jumpCh 函數"] },
   { version: "v1.9.4", date: "2026-05", notes: ["修正大字體時段落缺失問題", "改用更精確的行數計算"] },
   { version: "v1.9.3", date: "2026-05", notes: ["修正點擊跳太多頁的問題", "移除重複的 goPage 函數"] },
   { version: "v1.9.2", date: "2026-05", notes: ["放棄 CSS Column，改回精確字數計算翻頁", "解決空白過多問題"] },
@@ -603,51 +604,19 @@ export default function App() {
   );
 
   // ── 閱讀器 ──────────────────────────────────────────────────
-  // 精確計算每頁可顯示行數
-  function buildBreaks(text, fontSz) {
-    const W = window.innerWidth || 390;
-    const H = window.innerHeight || 844;
-    // 扣除 header(52) + progress(2) + bottom(100) + padding top+bottom(40)
-    const contentH = H - 52 - 2 - 100 - 40;
-    const contentW = W - 40; // 左右各20px
-    const lineH = fontSz * 1.95;
-    const linesPerPage = Math.floor(contentH / lineH);
-    // 中文字寬 = fontSize * 1.0（全形字），英文約 fontSize * 0.6
-    // 保守估計用 fontSize（全形）
-    const charsPerLine = Math.max(1, Math.floor(contentW / fontSz));
-    const lines = text.split("\n");
-    const breaks = [0];
-    let usedLines = 0;
-    let pos = 0;
-    for (const line of lines) {
-      // 空行算1行，非空行計算實際行數
-      const rowCount = line.length === 0 ? 1 : Math.ceil(line.length / charsPerLine);
-      if (usedLines > 0 && usedLines + rowCount > linesPerPage) {
-        breaks.push(pos);
-        usedLines = rowCount;
-      } else {
-        usedLines += rowCount;
-      }
-      pos += line.length + 1;
-    }
-    return breaks;
-  }
-
-  function getPageText(text, pg, breaks) {
-    if (!breaks || !breaks.length) return text;
-    const start = breaks[pg] || 0;
-    const end = breaks[pg + 1] || text.length;
-    return text.slice(start, end).trim();
-  }
-
-  const breaks = cur ? buildBreaks(cur.content, fs) : null;
-  const totalPgs = breaks ? Math.max(1, breaks.length) : 1;
+  // ── A套：DOM測量分頁（唯一分頁系統）──────────────────────────
+  const totalPgs = pageBreaks ? Math.max(1, pageBreaks.length) : 1;
   const safePage = Math.min(page, totalPgs - 1);
-  const pageText = cur ? getPageText(cur.content, safePage, breaks) : "";
+  const pageText = (() => {
+    if (!cur || !pageBreaks) return "";
+    const start = pageBreaks[safePage] || 0;
+    const end = pageBreaks[safePage + 1] || cur.content.length;
+    return cur.content.slice(start, end).trim();
+  })();
   const progressPct = totalPgs > 1 ? Math.round((safePage / (totalPgs - 1)) * 100) : 100;
 
   function goPage(delta) {
-    const np = Math.max(0, Math.min(totalPgs - 1, page + delta));
+    const np = Math.max(0, Math.min(totalPgs - 1, safePage + delta));
     setPage(np);
     if (cur) {
       const prog = np / Math.max(1, totalPgs - 1);
@@ -656,17 +625,6 @@ export default function App() {
       setBooks(prev => prev.map(b => b.id === cur.id ? u : b));
       dbPut(u);
     }
-  }
-
-  function jumpCh(ch) {
-    if (!breaks) return;
-    let targetPage = 0;
-    for (let i = 0; i < breaks.length; i++) {
-      if (breaks[i] <= ch.charOffset) targetPage = i;
-      else break;
-    }
-    setPage(targetPage);
-    setChaps(false);
   }
 
   const anyP = bms || chaps;
@@ -701,12 +659,14 @@ export default function App() {
       </div>
 
       {/* 內文 */}
-      <div style={{ flex: 1, overflow: "hidden", padding: "20px 20px", lineHeight: 1.95, fontSize: fs, color: rtc, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-        {pageText}
+      <div style={{ flex: 1, overflow: "hidden", paddingTop: 20, paddingBottom: 0, paddingLeft: "max(20px, env(safe-area-inset-left))", paddingRight: "max(20px, env(safe-area-inset-right))", lineHeight: 1.95, fontSize: fs, color: rtc, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+        {!pageBreaks ? (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: rmu, fontSize: 14 }}>正在計算頁面...</div>
+        ) : pageText}
       </div>
 
       {/* 底部 */}
-      <div style={{ height: 100, padding: "0 20px", borderTop: `1px solid ${rbd}`, background: rhd, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+      <div style={{ height: 80, paddingTop: 0, paddingBottom: 0, paddingLeft: "max(20px, env(safe-area-inset-left))", paddingRight: "max(20px, env(safe-area-inset-right))", borderTop: `1px solid ${rbd}`, background: rhd, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
         <span style={{ fontSize: 12, color: rmu, whiteSpace: "nowrap" }}>第 {safePage + 1} 頁，共 {totalPgs} 頁</span>
         <div style={{ flex: 1, margin: "0 12px", height: 4, background: rbd, borderRadius: 2 }}>
           <div style={{ height: "100%", background: rac, width: `${progressPct}%`, borderRadius: 2, transition: "width 0.2s" }} />
