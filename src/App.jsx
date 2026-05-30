@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 
-const VERSION = "v1.9.0";
+const VERSION = "v1.9.1";
 const CHANGELOG = [
+  { version: "v1.9.1", date: "2026-05", notes: ["修正 CSS Column 白畫面問題"] },
   { version: "v1.9.0", date: "2026-05", notes: ["改用 CSS Column 分頁（仿 Apple Books）", "文字自動填滿每頁不留空白", "左右滑動或點側邊翻頁", "底部頁數和%正確顯示"] },
   { version: "v1.8.5", date: "2026-05", notes: ["修正每頁空白過多問題", "段落間距計算更精確"] },
   { version: "v1.8.4", date: "2026-05", notes: ["用實際渲染高度計算每頁字數", "不管字體大小都能正確切頁"] },
@@ -745,8 +746,13 @@ export default function App() {
       </div>
 
       {/* CSS Column 內文區域 */}
+      <style>{`
+        .novel-col-scroll { scrollbar-width: none; }
+        .novel-col-scroll::-webkit-scrollbar { display: none; }
+      `}</style>
       <div
         ref={colRef}
+        className="novel-col-scroll"
         onScroll={updateColInfo}
         style={{
           flex: 1,
@@ -754,34 +760,22 @@ export default function App() {
           overflowY: "hidden",
           scrollSnapType: "x mandatory",
           WebkitOverflowScrolling: "touch",
-          display: "block",
-          columnWidth: "100%",
-          columnGap: 0,
-          columnFill: "auto",
-          height: "100%",
-          scrollbarWidth: "none",
         }}
       >
-        <style>{`
-          .col-reader::-webkit-scrollbar { display: none; }
-          .col-reader > .col-inner { 
-            height: 100%;
-            padding: 20px 20px;
-            column-width: calc(100vw - 0px);
-            column-gap: 0px;
-            column-fill: auto;
-            font-size: ${fs}px;
-            line-height: 1.95;
-            color: ${rtc};
-            white-space: pre-wrap;
-            word-break: break-word;
-            box-sizing: border-box;
-          }
-        `}</style>
-        <div className="col-reader" style={{ height: "100%", overflowX: "scroll", overflowY: "hidden", scrollSnapType: "x mandatory", scrollbarWidth: "none" }}>
-          <div className="col-inner" style={{ height: "100%", padding: "20px 20px", columnWidth: `${window.innerWidth}px`, columnGap: 0, columnFill: "auto", fontSize: fs, lineHeight: 1.95, color: rtc, whiteSpace: "pre-wrap", wordBreak: "break-word", boxSizing: "border-box" }}>
-            {cur?.content}
-          </div>
+        <div style={{
+          height: "100%",
+          padding: "20px",
+          columnWidth: `${window.innerWidth - 40}px`,
+          columnGap: "40px",
+          columnFill: "auto",
+          fontSize: fs,
+          lineHeight: 1.95,
+          color: rtc,
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
+          boxSizing: "border-box",
+        }}>
+          {cur?.content}
         </div>
       </div>
 
