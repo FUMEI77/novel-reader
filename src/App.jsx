@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 
-const VERSION = "v1.9.2";
+const VERSION = "v1.9.3";
 const CHANGELOG = [
+  { version: "v1.9.3", date: "2026-05", notes: ["修正點擊跳太多頁的問題", "移除重複的 goPage 函數"] },
   { version: "v1.9.2", date: "2026-05", notes: ["放棄 CSS Column，改回精確字數計算翻頁", "解決空白過多問題"] },
   { version: "v1.9.1", date: "2026-05", notes: ["修正 CSS Column 白畫面問題"] },
   { version: "v1.9.0", date: "2026-05", notes: ["改用 CSS Column 分頁（仿 Apple Books）", "文字自動填滿每頁不留空白", "左右滑動或點側邊翻頁", "底部頁數和%正確顯示"] },
@@ -278,26 +279,24 @@ export default function App() {
     const W = window.innerWidth;
     if (view !== "reader") return;
     if (bms || chaps) return;
-    if (fingers === 2 && absDx < 20 && absDy < 20) { if (gestures.prevPage === "two_tap") goPage(page-1); return; }
+    if (fingers === 2 && absDx < 20 && absDy < 20) { if (gestures.prevPage === "two_tap") goPage(-1); return; }
     if (fingers !== 1) return;
     if (absDx > 40 && absDx > absDy) {
-      if (dx < 0 && gestures.nextPage === "swipe_left") { goPage(page+1); return; }
-      if (dx > 0 && gestures.prevPage === "swipe_right") { goPage(page-1); return; }
+      if (dx < 0 && gestures.nextPage === "swipe_left") { goPage(1); return; }
+      if (dx > 0 && gestures.prevPage === "swipe_right") { goPage(-1); return; }
     }
     if (absDy > 40 && absDy > absDx) {
-      if (dy < 0 && gestures.nextPage === "swipe_up") { goPage(page+1); return; }
-      if (dy > 0 && gestures.prevPage === "swipe_down") { goPage(page-1); return; }
+      if (dy < 0 && gestures.nextPage === "swipe_up") { goPage(1); return; }
+      if (dy > 0 && gestures.prevPage === "swipe_down") { goPage(-1); return; }
     }
-    if (absDx < 15 && absDy < 15 && gestures.nextPage === "tap_right" && endX > W*0.6) goPage(page+1);
+    if (absDx < 15 && absDy < 15 && gestures.nextPage === "tap_right" && endX > W*0.6) goPage(1);
   }
 
   function startLP(book) { lpTimer.current = setTimeout(() => setCtxMenu({ book }), 600); }
   function cancelLP() { clearTimeout(lpTimer.current); }
 
-  function goPage(p) {
-    const np = Math.max(0, Math.min(pages-1, p));
-    setPage(np);
-    if (cur) { const u = {...cur, page:np, progress:np/Math.max(1,pages-1)}; setCur(u); setBooks(prev => prev.map(b => b.id===cur.id ? u : b)); dbPut(u); }
+  function goPageAbs(p) {
+    setPage(Math.max(0, p));
   }
   async function openBook(b) {
     setCur(b);
@@ -321,7 +320,7 @@ export default function App() {
   }
   function addBM() { if (!cur) return; const bm = {id:Date.now(), page, label:`第 ${page+1} 頁`}; const u = {...cur, bookmarks:[...cur.bookmarks, bm]}; setCur(u); setBooks(p => p.map(b => b.id===cur.id ? u : b)); dbPut(u); }
   function delBM(id) { const u = {...cur, bookmarks:cur.bookmarks.filter(x => x.id!==id)}; setCur(u); setBooks(p => p.map(b => b.id===cur.id ? u : b)); dbPut(u); }
-  function jumpBM(bm) { goPage(bm.page); setBms(false); }
+  function jumpBM(bm) { goPageAbs(bm.page); setBms(false); }
   function jumpCh(ch) {
     if (!pageBreaks) return;
     // Find which page contains this char offset
@@ -330,7 +329,7 @@ export default function App() {
       if (pageBreaks[i] <= ch.charOffset) targetPage = i;
       else break;
     }
-    goPage(targetPage);
+    goPageAbs(targetPage);
     setChaps(false);
   }
   function doDelete(id) { setBooks(p => p.filter(b => b.id!==id)); dbDelete(id); setDeleteTarget(null); setCtxMenu(null); }
@@ -658,10 +657,11 @@ export default function App() {
   const progressPct = totalPgs > 1 ? Math.round((safePage / (totalPgs - 1)) * 100) : 100;
 
   function goPage(delta) {
-    const np = Math.max(0, Math.min(totalPgs - 1, safePage + delta));
+    const np = Math.max(0, Math.min(totalPgs - 1, page + delta));
     setPage(np);
     if (cur) {
-      const u = { ...cur, page: np, progress: np / Math.max(1, totalPgs - 1) };
+      const prog = np / Math.max(1, totalPgs - 1);
+      const u = { ...cur, page: np, progress: prog };
       setCur(u);
       setBooks(prev => prev.map(b => b.id === cur.id ? u : b));
       dbPut(u);
