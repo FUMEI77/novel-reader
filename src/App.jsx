@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 
-const VERSION = "v1.8.5";
+const VERSION = "v1.9.0";
 const CHANGELOG = [
+  { version: "v1.9.0", date: "2026-05", notes: ["改用 CSS Column 分頁（仿 Apple Books）", "文字自動填滿每頁不留空白", "左右滑動或點側邊翻頁", "底部頁數和%正確顯示"] },
   { version: "v1.8.5", date: "2026-05", notes: ["修正每頁空白過多問題", "段落間距計算更精確"] },
   { version: "v1.8.4", date: "2026-05", notes: ["用實際渲染高度計算每頁字數", "不管字體大小都能正確切頁"] },
   { version: "v1.8.3", date: "2026-05", notes: ["根據螢幕高度和字體大小動態計算每頁字數", "翻頁內容更完整不斷行"] },
@@ -600,71 +601,229 @@ export default function App() {
     </div>
   );
 
-  // 閱讀器
-  const pageText = cur && pageBreaks ? getPage(cur.content, page, pageBreaks) : "";
-  const isCalculating = cur && !pageBreaks;
+  // ── CSS Column 閱讀器 ──────────────────────────────────────────
+  const colRef = useRef(null);
+  const [colPage, setColPage] = useState(0);
+  const [colTotal, setColTotal] = useState(1);
+  const colScrolling = useRef(false);
+
+  // 計算總頁數和目前頁
+  function updateColInfo() {
+    const el = colRef.current;
+    if (!el) return;
+    const total = Math.max(1, Math.round(el.scrollWidth / el.clientWidth));
+    const current = Math.max(0, Math.round(el.scrollLeft / el.clientWidth));
+    setColTotal(total);
+    setColPage(current);
+    // 儲存進度
+    if (cur) {
+      const prog = current / Math.max(1, total - 1);
+      const u = { ...cur, page: current, progress: Math.min(1, Math.max(0, prog)) };
+      setCur(u);
+      setBooks(prev => prev.map(b => b.id === cur.id ? u : b));
+      dbPut(u);
+    }
+  }
+
+  function goColPage(delta) {
+    const el = colRef.current;
+    if (!el) return;
+    const w = el.clientWidth;
+    const target = el.scrollLeft + delta * w;
+    el.scrollTo({ left: Math.max(0, Math.min(el.scrollWidth - w, target)), behavior: "smooth" });
+    setTimeout(updateColInfo, 350);
+  }
+
+  useEffect(() => {
+    if (view === "reader" && cur && colRef.current) {
+      const el = colRef.current;
+      // Restore position
+      setTimeout(() => {
+        const total = Math.round(el.scrollWidth / el.clientWidth);
+        const targetPage = cur.page || 0;
+        el.scrollLeft = targetPage * el.clientWidth;
+        updateColInfo();
+      }, 100);
+    }
+  }, [view, cur?.id]);
+
+  const colProgressPct = colTotal > 1 ? Math.round((colPage / (colTotal - 1)) * 100) : 100;
+
+  // Touch for column reader
+  const colTouchRef = useRef({ startX: 0, startY: 0, startLeft: 0, fingers: 0, twoStartY: 0, startB: 1 });
+
+  function onColTouchStart(e) {
+    const t = e.touches;
+    colTouchRef.current.fingers = t.length;
+    if (t.length === 1) {
+      colTouchRef.current.startX = t[0].clientX;
+      colTouchRef.current.startY = t[0].clientY;
+      colTouchRef.current.startLeft = colRef.current?.scrollLeft || 0;
+    }
+    if (t.length === 2) {
+      const y = (t[0].clientY + t[1].clientY) / 2;
+      colTouchRef.current.twoStartY = y;
+      colTouchRef.current.startB = bright;
+    }
+  }
+
+  function onColTouchMove(e) {
+    if (e.touches.length === 2 && gestures.brightness === "two_swipe") {
+      const y = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      const d = (colTouchRef.current.twoStartY - y) / 250;
+      const nb = Math.min(1, Math.max(0.2, colTouchRef.current.startB + d));
+      setBright(nb); showBF(nb); e.preventDefault();
+    }
+  }
+
+  function onColTouchEnd(e) {
+    const { startX, startY, fingers } = colTouchRef.current;
+    if (!e.changedTouches.length) return;
+    const endX = e.changedTouches[0].clientX;
+    const endY = e.changedTouches[0].clientY;
+    const dx = endX - startX;
+    const dy = endY - startY;
+    const absDx = Math.abs(dx);
+    const absDy = Math.abs(dy);
+    const W = window.innerWidth;
+
+    if (bms || chaps) return;
+
+    // 兩指點擊 → 上一頁
+    if (fingers === 2 && absDx < 20 && absDy < 20) {
+      goColPage(-1); return;
+    }
+    if (fingers !== 1) return;
+
+    // 左右滑動翻頁
+    if (absDx > 40 && absDx > absDy) {
+      if (dx < 0) goColPage(1);
+      else goColPage(-1);
+      return;
+    }
+
+    // 點擊右側下一頁
+    if (absDx < 20 && absDy < 20 && gestures.nextPage === "tap_right" && endX > W * 0.6) {
+      goColPage(1);
+    }
+    // 點擊左側上一頁
+    if (absDx < 20 && absDy < 20 && endX < W * 0.4) {
+      goColPage(-1);
+    }
+  }
+
   const anyP = bms || chaps;
+
   return (
-    <div style={{ background:rbg, color:rtc, fontFamily:"Georgia,'Noto Serif TC',serif", display:"flex", flexDirection:"column", height:"100vh", width:"100vw", overflow:"hidden", margin:0, padding:0, filter:`brightness(${bright})` }}
-      onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
+    <div style={{ background: rbg, color: rtc, fontFamily: "Georgia,'Noto Serif TC',serif", display: "flex", flexDirection: "column", height: "100vh", width: "100vw", overflow: "hidden", filter: `brightness(${bright})` }}
+      onTouchStart={onColTouchStart} onTouchMove={onColTouchMove} onTouchEnd={onColTouchEnd}>
       <style>{noZoomStyle}</style>
-      {brightFb !== null && <div style={{ position:"fixed", top:"50%", left:"50%", transform:"translate(-50%,-50%)", background:"rgba(0,0,0,0.75)", color:"#fff", borderRadius:16, padding:"14px 24px", fontSize:22, fontWeight:"bold", zIndex:300, pointerEvents:"none" }}>☀️ {brightFb}%</div>}
-      <div style={{ padding:"10px 16px", borderBottom:`1px solid ${rbd}`, display:"flex", alignItems:"center", justifyContent:"space-between", background:rhd, flexShrink:0 }}>
+
+      {brightFb !== null && <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", background: "rgba(0,0,0,0.75)", color: "#fff", borderRadius: 16, padding: "14px 24px", fontSize: 22, fontWeight: "bold", zIndex: 300, pointerEvents: "none" }}>☀️ {brightFb}%</div>}
+
+      {/* Header */}
+      <div style={{ padding: "10px 16px", borderBottom: `1px solid ${rbd}`, display: "flex", alignItems: "center", justifyContent: "space-between", background: rhd, flexShrink: 0 }}>
         <button style={ib(rtc)} onClick={() => { setView("library"); setBms(false); setChaps(false); stopTTS(); }}>← 書庫</button>
-        <div style={{ flex:1, textAlign:"center", fontSize:13, fontWeight:"bold", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", padding:"0 6px", color:rtc }}>{cur?.title}</div>
-        <div style={{ display:"flex" }}>
+        <div style={{ flex: 1, textAlign: "center", fontSize: 13, fontWeight: "bold", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", padding: "0 6px", color: rtc }}>{cur?.title}</div>
+        <div style={{ display: "flex" }}>
           <button style={ib(rtc)} onClick={addBM}>🔖</button>
-          <button style={{ ...ib(rtc), color:tts?rac:rtc }} onClick={toggleTTS}>🔊</button>
-          <button style={ib(rtc)} onClick={() => { setChaps(s=>!s); setBms(false); }}>📋</button>
-          <button style={ib(rtc)} onClick={() => { setBms(s=>!s); setChaps(false); }}>📑</button>
+          <button style={{ ...ib(rtc), color: tts ? rac : rtc }} onClick={toggleTTS}>🔊</button>
+          <button style={ib(rtc)} onClick={() => { setChaps(s => !s); setBms(false); }}>📋</button>
+          <button style={ib(rtc)} onClick={() => { setBms(s => !s); setChaps(false); }}>📑</button>
         </div>
       </div>
-      {tts && <div style={{ background:dark?"#1a1a1a":"#f8f8f8", borderBottom:`1px solid ${rbd}`, padding:"7px 16px", display:"flex", alignItems:"center", gap:8, flexShrink:0, flexWrap:"wrap" }}>
-        <span style={{ fontSize:12, color:rac, fontWeight:"bold" }}>🔊 朗讀中</span>
-        {[0.75,1,1.25,1.5,2].map(r => <button key={r} style={{ background:rate===r?rac:dark?"#333":"#eee", color:rate===r?"#fff":rtc, border:"none", borderRadius:6, padding:"4px 8px", cursor:"pointer", fontSize:11 }} onClick={() => setRate(r)}>{r}x</button>)}
-        <button style={{ marginLeft:"auto", background:"none", border:`1px solid ${rbd}`, borderRadius:6, padding:"4px 8px", cursor:"pointer", fontSize:11, color:rtc }} onClick={stopTTS}>停止</button>
+
+      {tts && <div style={{ background: dark ? "#1a1a1a" : "#f8f8f8", borderBottom: `1px solid ${rbd}`, padding: "7px 16px", display: "flex", alignItems: "center", gap: 8, flexShrink: 0, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 12, color: rac, fontWeight: "bold" }}>🔊 朗讀中</span>
+        {[0.75, 1, 1.25, 1.5, 2].map(r => <button key={r} style={{ background: rate === r ? rac : dark ? "#333" : "#eee", color: rate === r ? "#fff" : rtc, border: "none", borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: 11 }} onClick={() => setRate(r)}>{r}x</button>)}
+        <button style={{ marginLeft: "auto", background: "none", border: `1px solid ${rbd}`, borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: 11, color: rtc }} onClick={stopTTS}>停止</button>
       </div>}
-      <div style={{ height:2, background:rbd, flexShrink:0 }}><div style={{ height:"100%", background:rac, width:`${progressPct}%`, transition:"width 0.2s" }} /></div>
-      <div style={{ flex:1, overflow:"hidden", paddingTop:20, paddingLeft:20, paddingRight:20, paddingBottom:0, lineHeight:1.95, fontSize:fs, color:rtc, whiteSpace:"pre-wrap", wordBreak:"break-word", width:"100%", alignSelf:"stretch" }}>
-        {isCalculating ? (
-          <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100%", color:rmu, fontSize:14 }}>
-            正在計算頁面...
+
+      {/* 頂部進度條 */}
+      <div style={{ height: 2, background: rbd, flexShrink: 0 }}>
+        <div style={{ height: "100%", background: rac, width: `${colProgressPct}%`, transition: "width 0.2s" }} />
+      </div>
+
+      {/* CSS Column 內文區域 */}
+      <div
+        ref={colRef}
+        onScroll={updateColInfo}
+        style={{
+          flex: 1,
+          overflowX: "scroll",
+          overflowY: "hidden",
+          scrollSnapType: "x mandatory",
+          WebkitOverflowScrolling: "touch",
+          display: "block",
+          columnWidth: "100%",
+          columnGap: 0,
+          columnFill: "auto",
+          height: "100%",
+          scrollbarWidth: "none",
+        }}
+      >
+        <style>{`
+          .col-reader::-webkit-scrollbar { display: none; }
+          .col-reader > .col-inner { 
+            height: 100%;
+            padding: 20px 20px;
+            column-width: calc(100vw - 0px);
+            column-gap: 0px;
+            column-fill: auto;
+            font-size: ${fs}px;
+            line-height: 1.95;
+            color: ${rtc};
+            white-space: pre-wrap;
+            word-break: break-word;
+            box-sizing: border-box;
+          }
+        `}</style>
+        <div className="col-reader" style={{ height: "100%", overflowX: "scroll", overflowY: "hidden", scrollSnapType: "x mandatory", scrollbarWidth: "none" }}>
+          <div className="col-inner" style={{ height: "100%", padding: "20px 20px", columnWidth: `${window.innerWidth}px`, columnGap: 0, columnFill: "auto", fontSize: fs, lineHeight: 1.95, color: rtc, whiteSpace: "pre-wrap", wordBreak: "break-word", boxSizing: "border-box" }}>
+            {cur?.content}
           </div>
-        ) : pageText}
-      </div>
-      <div style={{ height:100, padding:"0 20px", borderTop:`1px solid ${rbd}`, background:rhd, display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0 }}>
-        <span style={{ fontSize:12, color:rmu, whiteSpace:"nowrap" }}>第 {page+1} 頁，共 {pages} 頁</span>
-        <div style={{ flex:1, margin:"0 12px", height:4, background:rbd, borderRadius:2 }}>
-          <div style={{ height:"100%", background:rac, width:`${progressPct}%`, borderRadius:2, transition:"width 0.2s" }} />
         </div>
-        <span style={{ fontSize:13, color:rac, fontWeight:"bold", whiteSpace:"nowrap" }}>{progressPct}%</span>
       </div>
-      {anyP && <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.3)", zIndex:99 }} onClick={() => { setBms(false); setChaps(false); }} />}
-      {chaps && <div style={{ ...pn, background:dark?"#1a1a1a":"#fff", borderLeft:`1px solid ${rbd}` }}>
-        <div style={{ padding:"18px 20px", borderBottom:`1px solid ${rbd}`, display:"flex", justifyContent:"space-between", alignItems:"center", fontWeight:"bold", fontSize:16, color:rtc }}>
+
+      {/* 底部進度 */}
+      <div style={{ height: 100, padding: "0 20px", borderTop: `1px solid ${rbd}`, background: rhd, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+        <span style={{ fontSize: 12, color: rmu, whiteSpace: "nowrap" }}>第 {colPage + 1} 頁，共 {colTotal} 頁</span>
+        <div style={{ flex: 1, margin: "0 12px", height: 4, background: rbd, borderRadius: 2 }}>
+          <div style={{ height: "100%", background: rac, width: `${colProgressPct}%`, borderRadius: 2, transition: "width 0.2s" }} />
+        </div>
+        <span style={{ fontSize: 13, color: rac, fontWeight: "bold", whiteSpace: "nowrap" }}>{colProgressPct}%</span>
+      </div>
+
+      {anyP && <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)", zIndex: 99 }} onClick={() => { setBms(false); setChaps(false); }} />}
+
+      {/* 章節面板 */}
+      {chaps && <div style={{ ...pn, background: dark ? "#1a1a1a" : "#fff", borderLeft: `1px solid ${rbd}` }}>
+        <div style={{ padding: "18px 20px", borderBottom: `1px solid ${rbd}`, display: "flex", justifyContent: "space-between", alignItems: "center", fontWeight: "bold", fontSize: 16, color: rtc }}>
           <span>章節（{chapters.length}）</span><button style={ib(rtc)} onClick={() => setChaps(false)}>✕</button>
         </div>
-        <div style={{ flex:1, overflowY:"auto", padding:12 }}>
-          {!chapters.length ? <div style={{ color:rmu, textAlign:"center", padding:"32px 0" }}>未偵測到章節</div> :
-            chapters.map((ch, i) => <div key={i} style={{ padding:"11px 14px", borderRadius:10, marginBottom:6, background:dark?"#2a2a2a":"#f5f5f5", cursor:"pointer" }} onClick={() => jumpCh(ch)}>
-              <div style={{ fontSize:14, fontWeight:"bold", color:rtc }}>{ch.title}</div>
-              <div style={{ fontSize:11, color:rmu, marginTop:2 }}>第 {i+1} 章</div>
+        <div style={{ flex: 1, overflowY: "auto", padding: 12 }}>
+          {!chapters.length ? <div style={{ color: rmu, textAlign: "center", padding: "32px 0" }}>未偵測到章節</div> :
+            chapters.map((ch, i) => <div key={i} style={{ padding: "11px 14px", borderRadius: 10, marginBottom: 6, background: dark ? "#2a2a2a" : "#f5f5f5", cursor: "pointer" }} onClick={() => jumpCh(ch)}>
+              <div style={{ fontSize: 14, fontWeight: "bold", color: rtc }}>{ch.title}</div>
+              <div style={{ fontSize: 11, color: rmu, marginTop: 2 }}>第 {i + 1} 章</div>
             </div>)}
         </div>
       </div>}
-      {bms && <div style={{ ...pn, background:dark?"#1a1a1a":"#fff", borderLeft:`1px solid ${rbd}` }}>
-        <div style={{ padding:"18px 20px", borderBottom:`1px solid ${rbd}`, display:"flex", justifyContent:"space-between", alignItems:"center", fontWeight:"bold", fontSize:16, color:rtc }}>
-          <span>書籤（{cur?.bookmarks?.length||0}）</span><button style={ib(rtc)} onClick={() => setBms(false)}>✕</button>
+
+      {/* 書籤面板 */}
+      {bms && <div style={{ ...pn, background: dark ? "#1a1a1a" : "#fff", borderLeft: `1px solid ${rbd}` }}>
+        <div style={{ padding: "18px 20px", borderBottom: `1px solid ${rbd}`, display: "flex", justifyContent: "space-between", alignItems: "center", fontWeight: "bold", fontSize: 16, color: rtc }}>
+          <span>書籤（{cur?.bookmarks?.length || 0}）</span><button style={ib(rtc)} onClick={() => setBms(false)}>✕</button>
         </div>
-        <div style={{ flex:1, overflowY:"auto", padding:12 }}>
+        <div style={{ flex: 1, overflowY: "auto", padding: 12 }}>
           {!cur?.bookmarks?.length ?
-            <div style={{ color:rmu, textAlign:"center", padding:"32px 0" }}><div style={{ fontSize:32, marginBottom:8 }}>🔖</div>尚無書籤<br /><span style={{ fontSize:12 }}>按上方 🔖 新增</span></div> :
-            cur.bookmarks.map(bm => <div key={bm.id} style={{ padding:"11px 14px", borderRadius:10, marginBottom:6, background:dark?"#2a2a2a":"#f5f5f5", display:"flex", alignItems:"center" }}>
-              <div style={{ flex:1, cursor:"pointer" }} onClick={() => jumpBM(bm)}>
-                <div style={{ fontSize:14, fontWeight:"bold", color:rtc }}>{bm.label}</div>
-                <div style={{ fontSize:11, color:rmu }}>第 {bm.page+1} 頁</div>
+            <div style={{ color: rmu, textAlign: "center", padding: "32px 0" }}><div style={{ fontSize: 32, marginBottom: 8 }}>🔖</div>尚無書籤<br /><span style={{ fontSize: 12 }}>按上方 🔖 新增</span></div> :
+            cur.bookmarks.map(bm => <div key={bm.id} style={{ padding: "11px 14px", borderRadius: 10, marginBottom: 6, background: dark ? "#2a2a2a" : "#f5f5f5", display: "flex", alignItems: "center" }}>
+              <div style={{ flex: 1, cursor: "pointer" }} onClick={() => jumpBM(bm)}>
+                <div style={{ fontSize: 14, fontWeight: "bold", color: rtc }}>{bm.label}</div>
+                <div style={{ fontSize: 11, color: rmu }}>第 {bm.page + 1} 頁</div>
               </div>
-              <button style={{ background:"none", border:"none", color:rmu, cursor:"pointer", fontSize:16 }} onClick={() => delBM(bm.id)}>✕</button>
+              <button style={{ background: "none", border: "none", color: rmu, cursor: "pointer", fontSize: 16 }} onClick={() => delBM(bm.id)}>✕</button>
             </div>)}
         </div>
       </div>}
