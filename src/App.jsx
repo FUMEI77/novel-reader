@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 
-const VERSION = "v1.9.1";
+const VERSION = "v1.9.2";
 const CHANGELOG = [
+  { version: "v1.9.2", date: "2026-05", notes: ["放棄 CSS Column，改回精確字數計算翻頁", "解決空白過多問題"] },
   { version: "v1.9.1", date: "2026-05", notes: ["修正 CSS Column 白畫面問題"] },
   { version: "v1.9.0", date: "2026-05", notes: ["改用 CSS Column 分頁（仿 Apple Books）", "文字自動填滿每頁不留空白", "左右滑動或點側邊翻頁", "底部頁數和%正確顯示"] },
   { version: "v1.8.5", date: "2026-05", notes: ["修正每頁空白過多問題", "段落間距計算更精確"] },
@@ -602,122 +603,88 @@ export default function App() {
     </div>
   );
 
-  // ── CSS Column 閱讀器 ──────────────────────────────────────────
-  const colRef = useRef(null);
-  const [colPage, setColPage] = useState(0);
-  const [colTotal, setColTotal] = useState(1);
-  const colScrolling = useRef(false);
+  // ── 閱讀器 ──────────────────────────────────────────────────
+  // 精確計算每頁字數
+  function calcPageSize(fontSz) {
+    const W = window.innerWidth || 390;
+    const H = window.innerHeight || 844;
+    const headerH = 52;
+    const progressH = 2;
+    const bottomH = 100;
+    const paddingH = 40; // top + bottom padding
+    const paddingW = 40; // left + right padding
+    const contentH = H - headerH - progressH - bottomH - paddingH;
+    const contentW = W - paddingW;
+    // 中文字寬約等於字體大小
+    const charsPerLine = Math.floor(contentW / fontSz);
+    // 行高
+    const lineH = fontSz * 1.95;
+    const linesPerPage = Math.floor(contentH / lineH);
+    return Math.max(200, charsPerLine * linesPerPage);
+  }
 
-  // 計算總頁數和目前頁
-  function updateColInfo() {
-    const el = colRef.current;
-    if (!el) return;
-    const total = Math.max(1, Math.round(el.scrollWidth / el.clientWidth));
-    const current = Math.max(0, Math.round(el.scrollLeft / el.clientWidth));
-    setColTotal(total);
-    setColPage(current);
-    // 儲存進度
+  function buildBreaks(text, fontSz) {
+    const pageSize = calcPageSize(fontSz);
+    const lines = text.split("\n");
+    const W = window.innerWidth || 390;
+    const charsPerLine = Math.floor((W - 40) / fontSz);
+    const breaks = [0];
+    let lineCount = 0;
+    const linesPerPage = Math.floor(calcPageSize(fontSz) / Math.max(1, charsPerLine));
+    let pos = 0;
+    for (const line of lines) {
+      const lineRows = Math.max(1, Math.ceil(line.length / Math.max(1, charsPerLine)));
+      if (lineCount > 0 && lineCount + lineRows > linesPerPage) {
+        breaks.push(pos);
+        lineCount = lineRows;
+      } else {
+        lineCount += lineRows;
+      }
+      pos += line.length + 1;
+    }
+    return breaks;
+  }
+
+  function getPageText(text, pg, breaks) {
+    if (!breaks || !breaks.length) return text;
+    const start = breaks[pg] || 0;
+    const end = breaks[pg + 1] || text.length;
+    return text.slice(start, end).trim();
+  }
+
+  const breaks = cur ? buildBreaks(cur.content, fs) : null;
+  const totalPgs = breaks ? Math.max(1, breaks.length) : 1;
+  const safePage = Math.min(page, totalPgs - 1);
+  const pageText = cur ? getPageText(cur.content, safePage, breaks) : "";
+  const progressPct = totalPgs > 1 ? Math.round((safePage / (totalPgs - 1)) * 100) : 100;
+
+  function goPage(delta) {
+    const np = Math.max(0, Math.min(totalPgs - 1, safePage + delta));
+    setPage(np);
     if (cur) {
-      const prog = current / Math.max(1, total - 1);
-      const u = { ...cur, page: current, progress: Math.min(1, Math.max(0, prog)) };
+      const u = { ...cur, page: np, progress: np / Math.max(1, totalPgs - 1) };
       setCur(u);
       setBooks(prev => prev.map(b => b.id === cur.id ? u : b));
       dbPut(u);
     }
   }
 
-  function goColPage(delta) {
-    const el = colRef.current;
-    if (!el) return;
-    const w = el.clientWidth;
-    const target = el.scrollLeft + delta * w;
-    el.scrollTo({ left: Math.max(0, Math.min(el.scrollWidth - w, target)), behavior: "smooth" });
-    setTimeout(updateColInfo, 350);
-  }
-
-  useEffect(() => {
-    if (view === "reader" && cur && colRef.current) {
-      const el = colRef.current;
-      // Restore position
-      setTimeout(() => {
-        const total = Math.round(el.scrollWidth / el.clientWidth);
-        const targetPage = cur.page || 0;
-        el.scrollLeft = targetPage * el.clientWidth;
-        updateColInfo();
-      }, 100);
+  function jumpCh(ch) {
+    if (!breaks) return;
+    let targetPage = 0;
+    for (let i = 0; i < breaks.length; i++) {
+      if (breaks[i] <= ch.charOffset) targetPage = i;
+      else break;
     }
-  }, [view, cur?.id]);
-
-  const colProgressPct = colTotal > 1 ? Math.round((colPage / (colTotal - 1)) * 100) : 100;
-
-  // Touch for column reader
-  const colTouchRef = useRef({ startX: 0, startY: 0, startLeft: 0, fingers: 0, twoStartY: 0, startB: 1 });
-
-  function onColTouchStart(e) {
-    const t = e.touches;
-    colTouchRef.current.fingers = t.length;
-    if (t.length === 1) {
-      colTouchRef.current.startX = t[0].clientX;
-      colTouchRef.current.startY = t[0].clientY;
-      colTouchRef.current.startLeft = colRef.current?.scrollLeft || 0;
-    }
-    if (t.length === 2) {
-      const y = (t[0].clientY + t[1].clientY) / 2;
-      colTouchRef.current.twoStartY = y;
-      colTouchRef.current.startB = bright;
-    }
-  }
-
-  function onColTouchMove(e) {
-    if (e.touches.length === 2 && gestures.brightness === "two_swipe") {
-      const y = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-      const d = (colTouchRef.current.twoStartY - y) / 250;
-      const nb = Math.min(1, Math.max(0.2, colTouchRef.current.startB + d));
-      setBright(nb); showBF(nb); e.preventDefault();
-    }
-  }
-
-  function onColTouchEnd(e) {
-    const { startX, startY, fingers } = colTouchRef.current;
-    if (!e.changedTouches.length) return;
-    const endX = e.changedTouches[0].clientX;
-    const endY = e.changedTouches[0].clientY;
-    const dx = endX - startX;
-    const dy = endY - startY;
-    const absDx = Math.abs(dx);
-    const absDy = Math.abs(dy);
-    const W = window.innerWidth;
-
-    if (bms || chaps) return;
-
-    // 兩指點擊 → 上一頁
-    if (fingers === 2 && absDx < 20 && absDy < 20) {
-      goColPage(-1); return;
-    }
-    if (fingers !== 1) return;
-
-    // 左右滑動翻頁
-    if (absDx > 40 && absDx > absDy) {
-      if (dx < 0) goColPage(1);
-      else goColPage(-1);
-      return;
-    }
-
-    // 點擊右側下一頁
-    if (absDx < 20 && absDy < 20 && gestures.nextPage === "tap_right" && endX > W * 0.6) {
-      goColPage(1);
-    }
-    // 點擊左側上一頁
-    if (absDx < 20 && absDy < 20 && endX < W * 0.4) {
-      goColPage(-1);
-    }
+    setPage(targetPage);
+    setChaps(false);
   }
 
   const anyP = bms || chaps;
 
   return (
     <div style={{ background: rbg, color: rtc, fontFamily: "Georgia,'Noto Serif TC',serif", display: "flex", flexDirection: "column", height: "100vh", width: "100vw", overflow: "hidden", filter: `brightness(${bright})` }}
-      onTouchStart={onColTouchStart} onTouchMove={onColTouchMove} onTouchEnd={onColTouchEnd}>
+      onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
       <style>{noZoomStyle}</style>
 
       {brightFb !== null && <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", background: "rgba(0,0,0,0.75)", color: "#fff", borderRadius: 16, padding: "14px 24px", fontSize: 22, fontWeight: "bold", zIndex: 300, pointerEvents: "none" }}>☀️ {brightFb}%</div>}
@@ -740,57 +707,26 @@ export default function App() {
         <button style={{ marginLeft: "auto", background: "none", border: `1px solid ${rbd}`, borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: 11, color: rtc }} onClick={stopTTS}>停止</button>
       </div>}
 
-      {/* 頂部進度條 */}
       <div style={{ height: 2, background: rbd, flexShrink: 0 }}>
-        <div style={{ height: "100%", background: rac, width: `${colProgressPct}%`, transition: "width 0.2s" }} />
+        <div style={{ height: "100%", background: rac, width: `${progressPct}%`, transition: "width 0.2s" }} />
       </div>
 
-      {/* CSS Column 內文區域 */}
-      <style>{`
-        .novel-col-scroll { scrollbar-width: none; }
-        .novel-col-scroll::-webkit-scrollbar { display: none; }
-      `}</style>
-      <div
-        ref={colRef}
-        className="novel-col-scroll"
-        onScroll={updateColInfo}
-        style={{
-          flex: 1,
-          overflowX: "scroll",
-          overflowY: "hidden",
-          scrollSnapType: "x mandatory",
-          WebkitOverflowScrolling: "touch",
-        }}
-      >
-        <div style={{
-          height: "100%",
-          padding: "20px",
-          columnWidth: `${window.innerWidth - 40}px`,
-          columnGap: "40px",
-          columnFill: "auto",
-          fontSize: fs,
-          lineHeight: 1.95,
-          color: rtc,
-          whiteSpace: "pre-wrap",
-          wordBreak: "break-word",
-          boxSizing: "border-box",
-        }}>
-          {cur?.content}
-        </div>
+      {/* 內文 */}
+      <div style={{ flex: 1, overflow: "hidden", padding: "20px 20px", lineHeight: 1.95, fontSize: fs, color: rtc, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+        {pageText}
       </div>
 
-      {/* 底部進度 */}
+      {/* 底部 */}
       <div style={{ height: 100, padding: "0 20px", borderTop: `1px solid ${rbd}`, background: rhd, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
-        <span style={{ fontSize: 12, color: rmu, whiteSpace: "nowrap" }}>第 {colPage + 1} 頁，共 {colTotal} 頁</span>
+        <span style={{ fontSize: 12, color: rmu, whiteSpace: "nowrap" }}>第 {safePage + 1} 頁，共 {totalPgs} 頁</span>
         <div style={{ flex: 1, margin: "0 12px", height: 4, background: rbd, borderRadius: 2 }}>
-          <div style={{ height: "100%", background: rac, width: `${colProgressPct}%`, borderRadius: 2, transition: "width 0.2s" }} />
+          <div style={{ height: "100%", background: rac, width: `${progressPct}%`, borderRadius: 2, transition: "width 0.2s" }} />
         </div>
-        <span style={{ fontSize: 13, color: rac, fontWeight: "bold", whiteSpace: "nowrap" }}>{colProgressPct}%</span>
+        <span style={{ fontSize: 13, color: rac, fontWeight: "bold", whiteSpace: "nowrap" }}>{progressPct}%</span>
       </div>
 
       {anyP && <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)", zIndex: 99 }} onClick={() => { setBms(false); setChaps(false); }} />}
 
-      {/* 章節面板 */}
       {chaps && <div style={{ ...pn, background: dark ? "#1a1a1a" : "#fff", borderLeft: `1px solid ${rbd}` }}>
         <div style={{ padding: "18px 20px", borderBottom: `1px solid ${rbd}`, display: "flex", justifyContent: "space-between", alignItems: "center", fontWeight: "bold", fontSize: 16, color: rtc }}>
           <span>章節（{chapters.length}）</span><button style={ib(rtc)} onClick={() => setChaps(false)}>✕</button>
@@ -804,14 +740,13 @@ export default function App() {
         </div>
       </div>}
 
-      {/* 書籤面板 */}
       {bms && <div style={{ ...pn, background: dark ? "#1a1a1a" : "#fff", borderLeft: `1px solid ${rbd}` }}>
         <div style={{ padding: "18px 20px", borderBottom: `1px solid ${rbd}`, display: "flex", justifyContent: "space-between", alignItems: "center", fontWeight: "bold", fontSize: 16, color: rtc }}>
           <span>書籤（{cur?.bookmarks?.length || 0}）</span><button style={ib(rtc)} onClick={() => setBms(false)}>✕</button>
         </div>
         <div style={{ flex: 1, overflowY: "auto", padding: 12 }}>
           {!cur?.bookmarks?.length ?
-            <div style={{ color: rmu, textAlign: "center", padding: "32px 0" }}><div style={{ fontSize: 32, marginBottom: 8 }}>🔖</div>尚無書籤<br /><span style={{ fontSize: 12 }}>按上方 🔖 新增</span></div> :
+            <div style={{ color: rmu, textAlign: "center", padding: "32px 0" }}><div style={{ fontSize: 32, marginBottom: 8 }}>🔖</div>尚無書籤</div> :
             cur.bookmarks.map(bm => <div key={bm.id} style={{ padding: "11px 14px", borderRadius: 10, marginBottom: 6, background: dark ? "#2a2a2a" : "#f5f5f5", display: "flex", alignItems: "center" }}>
               <div style={{ flex: 1, cursor: "pointer" }} onClick={() => jumpBM(bm)}>
                 <div style={{ fontSize: 14, fontWeight: "bold", color: rtc }}>{bm.label}</div>
