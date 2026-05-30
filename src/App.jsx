@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 
-const VERSION = "v2.0.3";
+const VERSION = "v2.0.4";
 const CHANGELOG = [
+  { version: "v2.0.4", date: "2026-05", notes: ["移除底部進度條", "底部背景改為透明", "只保留頁數和百分比文字"] },
   { version: "v2.0.3", date: "2026-05", notes: ["最後一行截斷修正，加入一行緩衝高度"] },
   { version: "v2.0.2", date: "2026-05", notes: ["用 ref 取得實際內文高度分頁", "解決分頁空白過多問題"] },
   { version: "v2.0.1", date: "2026-05", notes: ["統一單一 DOM 測量分頁函數", "精確計算段落高度", "移除所有重複分頁邏輯"] },
@@ -668,12 +669,9 @@ export default function App() {
       </div>
 
       {/* 底部 */}
-      <div style={{ height: 80, paddingTop: 0, paddingBottom: 0, paddingLeft: "max(20px, env(safe-area-inset-left))", paddingRight: "max(20px, env(safe-area-inset-right))", borderTop: `1px solid ${rbd}`, background: rhd, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+      <div style={{ height: 44, paddingLeft: "max(20px, env(safe-area-inset-left))", paddingRight: "max(20px, env(safe-area-inset-right))", background: rbg, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
         <span style={{ fontSize: 12, color: rmu, whiteSpace: "nowrap" }}>第 {safePage + 1} 頁，共 {totalPgs} 頁</span>
-        <div style={{ flex: 1, margin: "0 12px", height: 4, background: rbd, borderRadius: 2 }}>
-          <div style={{ height: "100%", background: rac, width: `${progressPct}%`, borderRadius: 2, transition: "width 0.2s" }} />
-        </div>
-        <span style={{ fontSize: 13, color: rac, fontWeight: "bold", whiteSpace: "nowrap" }}>{progressPct}%</span>
+        <span style={{ fontSize: 12, color: rmu, whiteSpace: "nowrap" }}>{progressPct}%</span>
       </div>
 
       {anyP && <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)", zIndex: 99 }} onClick={() => { setBms(false); setChaps(false); }} />}
